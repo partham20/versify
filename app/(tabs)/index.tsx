@@ -12,12 +12,14 @@ import {
   View,
 } from "react-native";
 import { Chip } from "../../components/Chip";
+import { DesktopHome } from "../../components/desktop/DesktopHome";
 import { Icon } from "../../components/Icon";
 import { LineReveal } from "../../components/LineReveal";
 import { Particles } from "../../components/Particles";
 import { PoemCard } from "../../components/PoemCard";
 import { TopBar } from "../../components/TopBar";
 import { useAuth } from "../../lib/auth";
+import { useIsDesktop } from "../../lib/breakpoints";
 import type { PoemWithStats } from "../../lib/database.types";
 import {
   fetchFeed,
@@ -30,6 +32,12 @@ import { colors, fonts, radius } from "../../theme";
 const DAYS = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
 
 export default function HomeFeed() {
+  const isDesktop = useIsDesktop();
+  if (isDesktop) return <DesktopHome />;
+  return <MobileHome />;
+}
+
+function MobileHome() {
   const router = useRouter();
   const { user, profile } = useAuth();
   const [poems, setPoems] = useState<PoemWithStats[]>([]);

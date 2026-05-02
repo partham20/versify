@@ -42,6 +42,12 @@ const NAME_MAP: Record<string, ComponentProps<typeof MaterialIcons>["name"]> = {
   alternate_email: "alternate-email",
   person_add: "person-add",
   auto_awesome: "auto-awesome",
+  shuffle: "shuffle",
+  repeat: "repeat",
+  volume_up: "volume-up",
+  add: "add",
+  queue_music: "queue-music",
+  lyrics: "lyrics",
 };
 
 export type IconName = keyof typeof NAME_MAP;

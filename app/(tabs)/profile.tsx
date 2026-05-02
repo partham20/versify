@@ -4,10 +4,12 @@ import { useRouter } from "expo-router";
 import { useEffect, useState } from "react";
 import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { GhostButton, PrimaryButton } from "../../components/Buttons";
+import { DesktopProfile } from "../../components/desktop/DesktopProfile";
 import { Icon } from "../../components/Icon";
 import { Particles } from "../../components/Particles";
 import { TopBar } from "../../components/TopBar";
 import { useAuth } from "../../lib/auth";
+import { useIsDesktop } from "../../lib/breakpoints";
 import type { PoemWithStats } from "../../lib/database.types";
 import { fetchPoemsByAuthor } from "../../lib/poems";
 import { colors, fonts, radius } from "../../theme";
@@ -15,6 +17,12 @@ import { colors, fonts, radius } from "../../theme";
 type Tab = "poems" | "playlists" | "liked";
 
 export default function Profile() {
+  const isDesktop = useIsDesktop();
+  if (isDesktop) return <DesktopProfile />;
+  return <ProfileScreen />;
+}
+
+function ProfileScreen() {
   const router = useRouter();
   const { profile, signOut } = useAuth();
   const [tab, setTab] = useState<Tab>("poems");

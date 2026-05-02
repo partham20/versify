@@ -2,10 +2,12 @@ import { Image } from "expo-image";
 import { useEffect, useState } from "react";
 import { ScrollView, StyleSheet, Text, View } from "react-native";
 import { Chip } from "../../components/Chip";
+import { DesktopInbox } from "../../components/desktop/DesktopInbox";
 import { Icon } from "../../components/Icon";
 import { Particles } from "../../components/Particles";
 import { TopBar } from "../../components/TopBar";
 import { useAuth } from "../../lib/auth";
+import { useIsDesktop } from "../../lib/breakpoints";
 import { supabase } from "../../lib/supabase";
 import type { NotificationRow } from "../../lib/database.types";
 import { colors, fonts } from "../../theme";
@@ -33,6 +35,12 @@ const FILTERS: Array<["all" | NotificationRow["type"], string]> = [
 ];
 
 export default function Notif() {
+  const isDesktop = useIsDesktop();
+  if (isDesktop) return <DesktopInbox />;
+  return <NotifScreen />;
+}
+
+function NotifScreen() {
   const { user } = useAuth();
   const [filter, setFilter] = useState<"all" | NotificationRow["type"]>("all");
   const [items, setItems] = useState<EnrichedNotif[]>([]);

@@ -11,11 +11,14 @@ import {
   View,
 } from "react-native";
 import * as Haptics from "expo-haptics";
+import { DesktopReader } from "../../components/desktop/DesktopReader";
+import { DesktopShell } from "../../components/desktop/DesktopShell";
 import { Glass } from "../../components/Glass";
 import { Icon } from "../../components/Icon";
 import { LineReveal } from "../../components/LineReveal";
 import { Particles } from "../../components/Particles";
 import { useAuth } from "../../lib/auth";
+import { useIsDesktop } from "../../lib/breakpoints";
 import type { PoemWithStats } from "../../lib/database.types";
 import {
   fetchPoem,
@@ -28,6 +31,35 @@ import { formatReadTime } from "../../lib/syllables";
 import { colors, fonts, motion, radius } from "../../theme";
 
 export default function PoemScreen() {
+  const isDesktop = useIsDesktop();
+  const { id } = useLocalSearchParams<{ id: string }>();
+  const [poemForDesktop, setPoemForDesktop] = useState<PoemWithStats | null>(null);
+
+  useEffect(() => {
+    if (!isDesktop || !id) return;
+    fetchPoem(id).then(setPoemForDesktop).catch(() => {});
+  }, [isDesktop, id]);
+
+  if (isDesktop) {
+    if (!poemForDesktop) {
+      return (
+        <DesktopShell>
+          <View style={[styles.flex, styles.center]}>
+            <ActivityIndicator color={colors.primary} />
+          </View>
+        </DesktopShell>
+      );
+    }
+    return (
+      <DesktopShell>
+        <DesktopReader poem={poemForDesktop} />
+      </DesktopShell>
+    );
+  }
+  return <MobileReader />;
+}
+
+function MobileReader() {
   const router = useRouter();
   const { id } = useLocalSearchParams<{ id: string }>();
   const { user } = useAuth();

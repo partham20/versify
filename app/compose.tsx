@@ -14,9 +14,11 @@ import {
 } from "react-native";
 import * as Haptics from "expo-haptics";
 import { Chip } from "../components/Chip";
+import { DesktopCompose } from "../components/desktop/DesktopCompose";
 import { Glass } from "../components/Glass";
 import { Icon } from "../components/Icon";
 import { Particles } from "../components/Particles";
+import { useIsDesktop } from "../lib/breakpoints";
 import { publishPoem } from "../lib/poems";
 import { countSyllables } from "../lib/syllables";
 import { colors, fonts, radius } from "../theme";
@@ -35,6 +37,12 @@ const STEP_TITLES = ["Write", "Dress it", "Publish"] as const;
 type Visibility = "public" | "followers" | "draft";
 
 export default function Compose() {
+  const isDesktop = useIsDesktop();
+  if (isDesktop) return <DesktopCompose />;
+  return <MobileCompose />;
+}
+
+function MobileCompose() {
   const router = useRouter();
   const [step, setStep] = useState(0);
   const [title, setTitle] = useState("");
