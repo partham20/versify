@@ -1,7 +1,24 @@
 -- Versify — initial schema
 -- Tables, RLS, indexes, and triggers for the core read/write loop.
+--
+-- Idempotent-ish: drops anything that may exist from a partial run, then
+-- recreates everything. Safe to re-run on a fresh project.
 
 create extension if not exists "pgcrypto";
+
+-- Clean up partial state from earlier runs (in dependency order).
+drop view  if exists public.poems_with_stats cascade;
+drop table if exists public.notifications   cascade;
+drop table if exists public.playlist_items  cascade;
+drop table if exists public.playlists       cascade;
+drop table if exists public.comment_likes   cascade;
+drop table if exists public.comments        cascade;
+drop table if exists public.follows         cascade;
+drop table if exists public.bookmarks       cascade;
+drop table if exists public.likes           cascade;
+drop table if exists public.poems           cascade;
+drop table if exists public.users           cascade;
+drop function if exists public.handle_new_user() cascade;
 
 -- ─────────────────────────────────────────────────────────────
 -- users (mirrors auth.users with profile fields)
@@ -34,23 +51,14 @@ create table public.poems (
   created_at        timestamptz not null default now()
 );
 
-create index poems_author_idx        on public.poems (author_id);
-create index poems_published_idx     on public.poems (published_at desc nulls last);
-create index poems_tags_idx          on public.poems using gin (tags);
-
--- array_to_string is STABLE (not IMMUTABLE) in modern Postgres, so we can't
--- use it directly inside an index expression. Wrap it in our own IMMUTABLE
--- helper that operates on text[] specifically.
-create or replace function public.poem_search_text(p_title text, p_body text[])
-returns text
-language sql
-immutable
-as $$
-  select coalesce(p_title, '') || ' ' || coalesce(array_to_string(p_body, ' '), '');
-$$;
-
-create index poems_search_idx on public.poems
-  using gin (to_tsvector('english'::regconfig, public.poem_search_text(title, body)));
+create index poems_author_idx    on public.poems (author_id);
+create index poems_published_idx on public.poems (published_at desc nulls last);
+create index poems_tags_idx      on public.poems using gin (tags);
+-- Full-text search index intentionally omitted from v1. Explore uses ilike.
+-- When search becomes a real feature, add a tsvector generated column:
+--   alter table public.poems add column search_vec tsvector
+--     generated always as (to_tsvector('english'::regconfig, title)) stored;
+--   create index poems_search_idx on public.poems using gin (search_vec);
 
 -- ─────────────────────────────────────────────────────────────
 -- engagement
@@ -270,9 +278,13 @@ create policy notifications_delete_self on public.notifications for delete using
 -- inserts come from edge functions using the service role (bypasses RLS).
 
 -- ─────────────────────────────────────────────────────────────
--- Realtime: enable for the tables that benefit from live updates
+-- Realtime: enable for the tables that benefit from live updates.
+-- Wrapped to ignore "already in publication" errors on re-runs.
 -- ─────────────────────────────────────────────────────────────
-alter publication supabase_realtime add table public.poems;
-alter publication supabase_realtime add table public.likes;
-alter publication supabase_realtime add table public.comments;
-alter publication supabase_realtime add table public.notifications;
+do $$
+begin
+  begin alter publication supabase_realtime add table public.poems;         exception when duplicate_object then null; end;
+  begin alter publication supabase_realtime add table public.likes;         exception when duplicate_object then null; end;
+  begin alter publication supabase_realtime add table public.comments;      exception when duplicate_object then null; end;
+  begin alter publication supabase_realtime add table public.notifications; exception when duplicate_object then null; end;
+end $$;
