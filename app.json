@@ -4,14 +4,12 @@
     "slug": "versify",
     "version": "0.1.0",
     "orientation": "portrait",
-    "icon": "./assets/icon.png",
     "scheme": "versify",
     "userInterfaceStyle": "dark",
     "newArchEnabled": true,
     "splash": {
-      "image": "./assets/splash.png",
       "resizeMode": "contain",
-      "backgroundColor": "#0A0A0F"
+      "backgroundColor": "#0e0e0e"
     },
     "ios": {
       "supportsTablet": true,
@@ -22,16 +20,12 @@
     },
     "android": {
       "package": "com.versify.app",
-      "adaptiveIcon": {
-        "foregroundImage": "./assets/adaptive-icon.png",
-        "backgroundColor": "#0A0A0F"
-      },
+      "versionCode": 1,
       "permissions": ["RECORD_AUDIO"]
     },
     "web": {
       "bundler": "metro",
-      "output": "single",
-      "favicon": "./assets/favicon.png"
+      "output": "single"
     },
     "plugins": [
       "expo-router",
