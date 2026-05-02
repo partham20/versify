@@ -37,8 +37,20 @@ create table public.poems (
 create index poems_author_idx        on public.poems (author_id);
 create index poems_published_idx     on public.poems (published_at desc nulls last);
 create index poems_tags_idx          on public.poems using gin (tags);
-create index poems_search_idx        on public.poems
-  using gin (to_tsvector('english'::regconfig, coalesce(title,'') || ' ' || array_to_string(body, ' ')));
+
+-- array_to_string is STABLE (not IMMUTABLE) in modern Postgres, so we can't
+-- use it directly inside an index expression. Wrap it in our own IMMUTABLE
+-- helper that operates on text[] specifically.
+create or replace function public.poem_search_text(p_title text, p_body text[])
+returns text
+language sql
+immutable
+as $$
+  select coalesce(p_title, '') || ' ' || coalesce(array_to_string(p_body, ' '), '');
+$$;
+
+create index poems_search_idx on public.poems
+  using gin (to_tsvector('english'::regconfig, public.poem_search_text(title, body)));
 
 -- ─────────────────────────────────────────────────────────────
 -- engagement
