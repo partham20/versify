@@ -21,7 +21,14 @@
     "android": {
       "package": "com.versify.app",
       "versionCode": 1,
-      "permissions": ["RECORD_AUDIO"]
+      "permissions": [
+        "RECORD_AUDIO",
+        "android.permission.RECORD_AUDIO",
+        "android.permission.MODIFY_AUDIO_SETTINGS",
+        "RECORD_AUDIO",
+        "android.permission.RECORD_AUDIO",
+        "android.permission.MODIFY_AUDIO_SETTINGS"
+      ]
     },
     "web": {
       "bundler": "metro",
@@ -43,7 +50,17 @@
     "extra": {
       "router": {
         "origin": false
+      },
+      "eas": {
+        "projectId": "338cf99a-7a22-47f7-8a92-63d9dbc1d5e4"
       }
+    },
+    "owner": "parthasarathym7",
+    "runtimeVersion": {
+      "policy": "appVersion"
+    },
+    "updates": {
+      "url": "https://u.expo.dev/338cf99a-7a22-47f7-8a92-63d9dbc1d5e4"
     }
   }
 }
