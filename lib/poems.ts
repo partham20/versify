@@ -1,5 +1,6 @@
 import { supabase } from "./supabase";
 import type { PoemWithStats, CommentRow } from "./database.types";
+import { countSyllables, readTimeSeconds } from "./syllables";
 
 export async function fetchFeed(limit = 20): Promise<PoemWithStats[]> {
   const { data, error } = await supabase
@@ -122,8 +123,39 @@ export type PublishInput = {
   visibility: "public" | "followers" | "draft";
 };
 
-export async function publishPoem(input: PublishInput) {
-  const { data, error } = await supabase.functions.invoke("publish_poem", { body: input });
+// Publishes a poem. By default does a direct client-side insert (RLS enforces
+// that author_id == auth.uid()). If you've deployed the publish_poem edge
+// function and prefer server-side validation, set useEdgeFunction = true.
+export async function publishPoem(input: PublishInput, useEdgeFunction = false) {
+  if (useEdgeFunction) {
+    const { data, error } = await supabase.functions.invoke("publish_poem", { body: input });
+    if (error) throw error;
+    return data as { poem: { id: string } };
+  }
+
+  const { data: userData, error: userErr } = await supabase.auth.getUser();
+  if (userErr || !userData.user) throw new Error("Not signed in");
+
+  const fullText = input.body.join(" ");
+  const syllables = countSyllables(fullText);
+  const read_time_seconds = readTimeSeconds(syllables);
+
+  const { data, error } = await supabase
+    .from("poems")
+    .insert({
+      author_id: userData.user.id,
+      title: input.title,
+      body: input.body,
+      tags: input.tags,
+      cover_url: input.cover_url ?? null,
+      audio_url: input.audio_url ?? null,
+      syllables,
+      read_time_seconds,
+      visibility: input.visibility,
+      published_at: input.visibility === "draft" ? null : new Date().toISOString(),
+    })
+    .select("id")
+    .single();
   if (error) throw error;
-  return data as { poem: { id: string } };
+  return { poem: { id: data.id } };
 }
