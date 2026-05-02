@@ -6,8 +6,8 @@ import { Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-
 import { Icon } from "../../components/Icon";
 import { Particles } from "../../components/Particles";
 import { TopBar } from "../../components/TopBar";
-import { supabase } from "../../lib/supabase";
 import type { PoemWithStats } from "../../lib/database.types";
+import { searchPoems } from "../../lib/poems";
 import { colors, fonts, radius } from "../../theme";
 
 const CATEGORIES = [
@@ -30,14 +30,12 @@ export default function Explore() {
       return;
     }
     const t = setTimeout(async () => {
-      const q = query.trim();
-      const { data } = await supabase
-        .from("poems_with_stats")
-        .select("*")
-        .or(`title.ilike.%${q}%,author_name.ilike.%${q}%`)
-        .eq("visibility", "public")
-        .limit(20);
-      setResults((data ?? []) as PoemWithStats[]);
+      try {
+        const data = await searchPoems(query, 30);
+        setResults(data);
+      } catch {
+        setResults([]);
+      }
     }, 250);
     return () => clearTimeout(t);
   }, [query]);

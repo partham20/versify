@@ -22,6 +22,14 @@ export async function fetchPoem(id: string): Promise<PoemWithStats | null> {
   return data as PoemWithStats;
 }
 
+export async function searchPoems(query: string, limit = 30): Promise<PoemWithStats[]> {
+  const q = query.trim();
+  if (!q) return [];
+  const { data, error } = await supabase.rpc("search_poems", { q, max_results: limit });
+  if (error) throw error;
+  return (data ?? []) as PoemWithStats[];
+}
+
 export async function fetchPoemsByAuthor(authorId: string): Promise<PoemWithStats[]> {
   const { data, error } = await supabase
     .from("poems_with_stats")
