@@ -278,6 +278,24 @@ create policy notifications_delete_self on public.notifications for delete using
 -- inserts come from edge functions using the service role (bypasses RLS).
 
 -- ─────────────────────────────────────────────────────────────
+-- Role grants. Supabase normally provisions these on a fresh project, but
+-- they're wiped if you ever DROP SCHEMA public CASCADE. Restate them here
+-- so the migration is self-contained.
+-- ─────────────────────────────────────────────────────────────
+grant usage on schema public to anon, authenticated, service_role;
+
+grant all on all tables    in schema public to anon, authenticated, service_role;
+grant all on all sequences in schema public to anon, authenticated, service_role;
+grant all on all functions in schema public to anon, authenticated, service_role;
+
+alter default privileges in schema public
+  grant all on tables    to anon, authenticated, service_role;
+alter default privileges in schema public
+  grant all on sequences to anon, authenticated, service_role;
+alter default privileges in schema public
+  grant all on functions to anon, authenticated, service_role;
+
+-- ─────────────────────────────────────────────────────────────
 -- Realtime: enable for the tables that benefit from live updates.
 -- Wrapped to ignore "already in publication" errors on re-runs.
 -- ─────────────────────────────────────────────────────────────
