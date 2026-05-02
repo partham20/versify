@@ -38,7 +38,7 @@ create index poems_author_idx        on public.poems (author_id);
 create index poems_published_idx     on public.poems (published_at desc nulls last);
 create index poems_tags_idx          on public.poems using gin (tags);
 create index poems_search_idx        on public.poems
-  using gin (to_tsvector('english', coalesce(title,'') || ' ' || array_to_string(body, ' ')));
+  using gin (to_tsvector('english'::regconfig, coalesce(title,'') || ' ' || array_to_string(body, ' ')));
 
 -- ─────────────────────────────────────────────────────────────
 -- engagement
