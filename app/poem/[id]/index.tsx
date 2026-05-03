@@ -1,7 +1,7 @@
 import { Image } from "expo-image";
 import { LinearGradient } from "expo-linear-gradient";
 import { useLocalSearchParams, useRouter } from "expo-router";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
@@ -12,6 +12,7 @@ import {
   Text,
   View,
 } from "react-native";
+import { Audio, type AVPlaybackStatus } from "expo-av";
 import * as Haptics from "expo-haptics";
 import { DesktopReader } from "../../../components/desktop/DesktopReader";
 import { DesktopShell } from "../../../components/desktop/DesktopShell";
@@ -71,6 +72,9 @@ function MobileReader() {
   const [bookmarked, setBookmarked] = useState(false);
   const [playing, setPlaying] = useState(false);
   const [progress, setProgress] = useState(0);
+  const [duration, setDuration] = useState(0);
+  const [audioError, setAudioError] = useState<string | null>(null);
+  const soundRef = useRef<Audio.Sound | null>(null);
   const [deleting, setDeleting] = useState(false);
 
   const isAuthor = !!user && !!poem && user.id === poem.author_id;
@@ -130,14 +134,73 @@ function MobileReader() {
     })();
   }, [id, user]);
 
-  // Fake playback progress until expo-av is wired up to a real audio file.
+  // Load the poem's narration into expo-av Audio.Sound when the poem changes.
   useEffect(() => {
-    if (!playing) return;
-    const t = setInterval(() => {
-      setProgress((p) => (p >= 1 ? 0 : p + 0.005));
-    }, 200);
-    return () => clearInterval(t);
-  }, [playing]);
+    let cancelled = false;
+    async function load() {
+      // Tear down whatever is currently loaded before swapping.
+      if (soundRef.current) {
+        try {
+          await soundRef.current.unloadAsync();
+        } catch {}
+        soundRef.current = null;
+      }
+      setPlaying(false);
+      setProgress(0);
+      setDuration(0);
+      setAudioError(null);
+      if (!poem?.audio_url) return;
+      try {
+        await Audio.setAudioModeAsync({ playsInSilentModeIOS: true });
+        const { sound } = await Audio.Sound.createAsync(
+          { uri: poem.audio_url },
+          { shouldPlay: false },
+          (status: AVPlaybackStatus) => {
+            if (!status.isLoaded) return;
+            const d = status.durationMillis ?? 0;
+            const p = status.positionMillis ?? 0;
+            setDuration(d / 1000);
+            setProgress(d > 0 ? p / d : 0);
+            setPlaying(status.isPlaying);
+            if (status.didJustFinish) {
+              setPlaying(false);
+              setProgress(0);
+              sound.setPositionAsync(0).catch(() => {});
+            }
+          }
+        );
+        if (cancelled) {
+          await sound.unloadAsync();
+          return;
+        }
+        soundRef.current = sound;
+      } catch (e) {
+        if (!cancelled) setAudioError((e as Error).message);
+      }
+    }
+    void load();
+    return () => {
+      cancelled = true;
+      if (soundRef.current) {
+        soundRef.current.unloadAsync().catch(() => {});
+        soundRef.current = null;
+      }
+    };
+  }, [poem?.id, poem?.audio_url]);
+
+  async function togglePlay() {
+    const sound = soundRef.current;
+    if (!sound) return;
+    try {
+      if (playing) {
+        await sound.pauseAsync();
+      } else {
+        await sound.playAsync();
+      }
+    } catch (e) {
+      setAudioError((e as Error).message);
+    }
+  }
 
   async function onToggleLike() {
     if (!user || !poem) return;
@@ -337,17 +400,20 @@ function MobileReader() {
                   <Text style={styles.playerTitle}>
                     Narrated by {poem.author_name.split(" ")[0]}
                   </Text>
-                  <Text style={styles.playerSub}>DOLBY ATMOS</Text>
+                  <Text style={styles.playerSub}>
+                    {audioError
+                      ? "AUDIO UNAVAILABLE"
+                      : duration > 0
+                        ? `${Math.floor((duration * progress) / 60)}:${String(Math.floor((duration * progress) % 60)).padStart(2, "0")} / ${Math.floor(duration / 60)}:${String(Math.floor(duration % 60)).padStart(2, "0")}`
+                        : "LOADING…"}
+                  </Text>
                 </View>
               </View>
               <View style={styles.playerControls}>
                 <Pressable>
                   <Icon name="skip_previous" size={22} color={colors.onSurfaceVariant} />
                 </Pressable>
-                <Pressable
-                  onPress={() => setPlaying((p) => !p)}
-                  style={styles.playBtn}
-                >
+                <Pressable onPress={togglePlay} style={styles.playBtn}>
                   <Icon
                     name={playing ? "pause" : "play_arrow"}
                     size={26}

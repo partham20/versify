@@ -1,3 +1,4 @@
+import { Audio } from "expo-av";
 import { Platform } from "react-native";
 import { supabase } from "./supabase";
 
@@ -11,13 +12,16 @@ export type AudioRecorder = {
 };
 
 export function isRecordingSupported(): boolean {
-  if (Platform.OS !== "web") return false;
-  return (
-    typeof navigator !== "undefined" &&
-    !!navigator.mediaDevices &&
-    typeof navigator.mediaDevices.getUserMedia === "function" &&
-    typeof window.MediaRecorder !== "undefined"
-  );
+  if (Platform.OS === "web") {
+    return (
+      typeof navigator !== "undefined" &&
+      !!navigator.mediaDevices &&
+      typeof navigator.mediaDevices.getUserMedia === "function" &&
+      typeof window.MediaRecorder !== "undefined"
+    );
+  }
+  // On native, expo-av is bundled. Permission is asked at startRecording().
+  return true;
 }
 
 // Best-supported MIME type for the current browser. Chrome/Edge/Firefox all
@@ -39,6 +43,8 @@ function pickMimeType(): string {
 // Asks for mic access and returns a handle the caller can stop later.
 // Throws on permission denial or unsupported environments.
 export async function startRecording(): Promise<AudioRecorder> {
+  if (Platform.OS !== "web") return startNativeRecording();
+
   if (!isRecordingSupported()) {
     throw new Error("Microphone recording isn't available in this browser.");
   }
@@ -111,6 +117,64 @@ export async function startRecording(): Promise<AudioRecorder> {
         if (recorder.state !== "inactive") recorder.stop();
       } catch {}
       release();
+    },
+  };
+}
+
+// Native (iOS / Android) recording via expo-av Audio.Recording. Returns the
+// same AudioRecorder shape the web flow returns; stop() reads the local file
+// URI back as a Blob so the existing uploadAudio() helper works unchanged.
+async function startNativeRecording(): Promise<AudioRecorder> {
+  const perm = await Audio.requestPermissionsAsync();
+  if (!perm.granted) {
+    throw new Error(
+      "Microphone permission denied. Open Settings → Versify → enable Microphone."
+    );
+  }
+  await Audio.setAudioModeAsync({
+    allowsRecordingIOS: true,
+    playsInSilentModeIOS: true,
+  });
+
+  const recording = new Audio.Recording();
+  try {
+    await recording.prepareToRecordAsync(
+      Audio.RecordingOptionsPresets.HIGH_QUALITY
+    );
+    await recording.startAsync();
+  } catch (e) {
+    throw new Error(`Couldn't start recording: ${(e as Error).message}`);
+  }
+
+  const startedAt = Date.now();
+  // HIGH_QUALITY produces .m4a / aac on both platforms.
+  const mimeType = "audio/m4a";
+
+  return {
+    startedAt,
+    mimeType,
+    stop: async () => {
+      try {
+        await recording.stopAndUnloadAsync();
+      } catch (e) {
+        throw new Error(`Couldn't stop recording: ${(e as Error).message}`);
+      }
+      // Restore audio mode so playback in the reader doesn't get stuck on
+      // the recording profile.
+      try {
+        await Audio.setAudioModeAsync({ allowsRecordingIOS: false });
+      } catch {}
+      const uri = recording.getURI();
+      if (!uri) throw new Error("Recording finished but produced no file.");
+      const res = await fetch(uri);
+      const blob = await res.blob();
+      // Some Android variants leave blob.type empty; force the mime so the
+      // bucket policy + extension picker pick the right value.
+      return blob.type ? blob : new Blob([blob], { type: mimeType });
+    },
+    cancel: () => {
+      recording.stopAndUnloadAsync().catch(() => {});
+      Audio.setAudioModeAsync({ allowsRecordingIOS: false }).catch(() => {});
     },
   };
 }
