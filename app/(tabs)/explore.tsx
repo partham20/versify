@@ -3,9 +3,11 @@ import { LinearGradient } from "expo-linear-gradient";
 import { useRouter } from "expo-router";
 import { useEffect, useState } from "react";
 import { Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
+import { DesktopExplore } from "../../components/desktop/DesktopExplore";
 import { Icon } from "../../components/Icon";
 import { Particles } from "../../components/Particles";
 import { TopBar } from "../../components/TopBar";
+import { useIsDesktop } from "../../lib/breakpoints";
 import type { PoemWithStats } from "../../lib/database.types";
 import { searchPoems } from "../../lib/poems";
 import { colors, fonts, radius } from "../../theme";
@@ -20,6 +22,12 @@ const CATEGORIES = [
 ];
 
 export default function Explore() {
+  const isDesktop = useIsDesktop();
+  if (isDesktop) return <DesktopExplore />;
+  return <ExploreScreen />;
+}
+
+function ExploreScreen() {
   const router = useRouter();
   const [query, setQuery] = useState("");
   const [results, setResults] = useState<PoemWithStats[]>([]);
