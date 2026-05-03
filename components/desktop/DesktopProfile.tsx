@@ -5,7 +5,9 @@ import { useEffect, useState } from "react";
 import { Pressable, ScrollView, Text, View } from "react-native";
 import { useAuth } from "../../lib/auth";
 import type { PoemWithStats } from "../../lib/database.types";
+import { useNowPlaying } from "../../lib/nowPlaying";
 import { fetchPoemsByAuthor, fetchUserBookmarks, fetchUserLikes } from "../../lib/poems";
+import { shareProfile } from "../../lib/share";
 import { formatReadTime } from "../../lib/syllables";
 import { colors, fonts } from "../../theme";
 import { Icon } from "../Icon";
@@ -14,11 +16,24 @@ type Tab = "poems" | "playlists" | "liked";
 
 export function DesktopProfile() {
   const router = useRouter();
-  const { profile, signOut } = useAuth();
+  const { profile } = useAuth();
   const [tab, setTab] = useState<Tab>("poems");
   const [poems, setPoems] = useState<PoemWithStats[]>([]);
   const [likedIds, setLikedIds] = useState<Set<string>>(new Set());
   const [bookmarkIds, setBookmarkIds] = useState<Set<string>>(new Set());
+  const [shareLabel, setShareLabel] = useState("Share");
+
+  async function onShare() {
+    if (!profile) return;
+    const result = await shareProfile(profile.handle, profile.display_name);
+    if (result === "copied") {
+      setShareLabel("Link copied");
+      setTimeout(() => setShareLabel("Share"), 1800);
+    } else if (result === "error") {
+      setShareLabel("Couldn't share");
+      setTimeout(() => setShareLabel("Share"), 1800);
+    }
+  }
 
   useEffect(() => {
     if (!profile) return;
@@ -96,16 +111,30 @@ export function DesktopProfile() {
           </View>
 
           <View style={styles.actionsRow}>
-            <Pressable onPress={() => router.push("/compose")} style={styles.primaryBtn}>
+            <Pressable
+              onPress={() => router.push("/profile/edit" as never)}
+              style={styles.primaryBtn}
+            >
               <Icon name="edit_note" size={16} color={colors.onPrimary} />
-              <Text style={styles.primaryBtnText}>Write a poem</Text>
+              <Text style={styles.primaryBtnText}>Edit profile</Text>
             </Pressable>
-            <Pressable style={styles.ghostBtn}>
-              <Icon name="ios_share" size={14} color={colors.white} />
-              <Text style={styles.ghostBtnText}>Share</Text>
+            <Pressable onPress={() => router.push("/compose")} style={styles.ghostBtn}>
+              <Icon name="edit" size={14} color={colors.white} />
+              <Text style={styles.ghostBtnText}>Write a poem</Text>
             </Pressable>
-            <Pressable onPress={signOut} style={styles.iconOnlyBtn}>
-              <Icon name="more_horiz" size={18} color={colors.white} />
+            <Pressable onPress={onShare} style={styles.ghostBtn}>
+              <Icon
+                name={shareLabel === "Link copied" ? "check" : "ios_share"}
+                size={14}
+                color={shareLabel === "Link copied" ? colors.primary : colors.white}
+              />
+              <Text style={styles.ghostBtnText}>{shareLabel}</Text>
+            </Pressable>
+            <Pressable
+              onPress={() => router.push("/settings")}
+              style={styles.iconOnlyBtn}
+            >
+              <Icon name="settings" size={18} color={colors.white} />
             </Pressable>
           </View>
         </View>
@@ -174,6 +203,8 @@ function PoemGrid({
   onOpen: (id: string) => void;
   likedIds: Set<string>;
 }) {
+  const play = useNowPlaying((s) => s.play);
+
   if (poems.length === 0) {
     return (
       <View style={styles.section}>
@@ -200,9 +231,15 @@ function PoemGrid({
                   <Icon name="auto_stories" size={28} color={colors.onSurfaceVariant} />
                 </View>
               )}
-              <View style={styles.coverPlay}>
+              <Pressable
+                onPress={(e) => {
+                  (e as unknown as { stopPropagation?: () => void }).stopPropagation?.();
+                  play(p);
+                }}
+                style={styles.coverPlay}
+              >
                 <Icon name="play_arrow" size={20} color={colors.onPrimary} />
-              </View>
+              </Pressable>
             </View>
             <Text style={styles.cardTitle} numberOfLines={1}>
               {p.title}

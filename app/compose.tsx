@@ -3,6 +3,7 @@ import { LinearGradient } from "expo-linear-gradient";
 import { useRouter } from "expo-router";
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
+  ActivityIndicator,
   KeyboardAvoidingView,
   Platform,
   Pressable,
@@ -18,7 +19,15 @@ import { DesktopCompose } from "../components/desktop/DesktopCompose";
 import { Glass } from "../components/Glass";
 import { Icon } from "../components/Icon";
 import { Particles } from "../components/Particles";
+import {
+  isRecordingSupported,
+  startRecording,
+  uploadAudio,
+  type AudioRecorder,
+} from "../lib/audio";
+import { useAuth } from "../lib/auth";
 import { useIsDesktop } from "../lib/breakpoints";
+import { COVER_MAX_BYTES, pickNativeCover, uploadCover } from "../lib/covers";
 import { publishPoem } from "../lib/poems";
 import { countSyllables } from "../lib/syllables";
 import { colors, fonts, radius } from "../theme";
@@ -44,16 +53,28 @@ export default function Compose() {
 
 function MobileCompose() {
   const router = useRouter();
+  const { user } = useAuth();
   const [step, setStep] = useState(0);
   const [title, setTitle] = useState("");
   const [body, setBody] = useState("");
-  const [recording, setRecording] = useState(false);
+  // Cover state — defaults to first stock backdrop, but can be replaced with
+  // a user upload via pickNativeCover().
+  const [coverUrl, setCoverUrl] = useState<string>(BACKDROPS[0]);
+  const [isCustomCover, setIsCustomCover] = useState(false);
+  const [uploadingCover, setUploadingCover] = useState(false);
+  const [coverError, setCoverError] = useState<string | null>(null);
+  // Real recording state — held while the recorder is live.
+  const [recorder, setRecorder] = useState<AudioRecorder | null>(null);
   const [recDuration, setRecDuration] = useState(0);
-  const [backdrop, setBackdrop] = useState(0);
+  const [audioUrl, setAudioUrl] = useState<string | null>(null);
+  const [uploadingAudio, setUploadingAudio] = useState(false);
+  const [audioError, setAudioError] = useState<string | null>(null);
   const [visibility, setVisibility] = useState<Visibility>("public");
   const [tags, setTags] = useState<string[]>(["Solitude"]);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  const recording = !!recorder;
 
   const stats = useMemo(() => {
     const lines = body.split("\n").filter(Boolean).length;
@@ -71,11 +92,72 @@ function MobileCompose() {
     }
   }, [stats.syl]);
 
+  // Tick the recording elapsed counter while a recorder is live.
   useEffect(() => {
-    if (!recording) return;
-    const t = setInterval(() => setRecDuration((d) => d + 0.1), 100);
+    if (!recorder) return;
+    setRecDuration(0);
+    const t = setInterval(
+      () => setRecDuration((Date.now() - recorder.startedAt) / 1000),
+      200
+    );
     return () => clearInterval(t);
-  }, [recording]);
+  }, [recorder]);
+
+  async function pickCover() {
+    setCoverError(null);
+    if (!user) {
+      setCoverError("Sign in to upload a cover.");
+      return;
+    }
+    setUploadingCover(true);
+    try {
+      const blob = await pickNativeCover();
+      if (!blob) return; // user cancelled
+      if (blob.size > COVER_MAX_BYTES) {
+        setCoverError("Image is over 10 MB. Pick something smaller.");
+        return;
+      }
+      const url = await uploadCover(user.id, blob, blob.type);
+      setCoverUrl(url);
+      setIsCustomCover(true);
+    } catch (e) {
+      setCoverError((e as Error).message);
+    } finally {
+      setUploadingCover(false);
+    }
+  }
+
+  async function toggleRecording() {
+    setAudioError(null);
+    if (recorder) {
+      try {
+        const blob = await recorder.stop();
+        setRecorder(null);
+        if (!user) {
+          setAudioError("Sign in to upload narration.");
+          return;
+        }
+        setUploadingAudio(true);
+        const url = await uploadAudio(user.id, blob);
+        setAudioUrl(url);
+      } catch (e) {
+        setAudioError(`Recording failed: ${(e as Error).message}`);
+      } finally {
+        setUploadingAudio(false);
+      }
+      return;
+    }
+    if (!isRecordingSupported()) {
+      setAudioError("Recording isn't available on this device.");
+      return;
+    }
+    try {
+      const r = await startRecording();
+      setRecorder(r);
+    } catch (e) {
+      setAudioError((e as Error).message);
+    }
+  }
 
   function next() {
     if (step < 2) {
@@ -87,6 +169,10 @@ function MobileCompose() {
 
   async function publish() {
     if (!body.trim()) return;
+    if (recorder) {
+      setError("Stop recording before publishing.");
+      return;
+    }
     setSubmitting(true);
     setError(null);
     try {
@@ -95,7 +181,8 @@ function MobileCompose() {
         title: title.trim() || "Untitled",
         body: stanzas.length > 0 ? stanzas : [body.trim()],
         tags,
-        cover_url: BACKDROPS[backdrop],
+        cover_url: coverUrl,
+        audio_url: audioUrl,
         visibility,
       });
       router.replace("/(tabs)");
@@ -111,7 +198,7 @@ function MobileCompose() {
     <View style={styles.flex}>
       {showBackdrop && (
         <>
-          <Image source={{ uri: BACKDROPS[backdrop] }} style={StyleSheet.absoluteFillObject} contentFit="cover" />
+          <Image source={{ uri: coverUrl }} style={StyleSheet.absoluteFillObject} contentFit="cover" />
           <LinearGradient
             colors={["rgba(14,14,14,0.4)", "rgba(14,14,14,0.85)"]}
             style={StyleSheet.absoluteFillObject}
@@ -196,24 +283,61 @@ function MobileCompose() {
 
             <Text style={styles.sectionLabel}>CHOOSE A BACKDROP</Text>
             <View style={styles.grid}>
-              {BACKDROPS.map((b, i) => (
+              {/* Custom upload appears as the leftmost selected tile. */}
+              {isCustomCover && (
                 <Pressable
-                  key={i}
-                  onPress={() => setBackdrop(i)}
-                  style={[
-                    styles.gridItem,
-                    i === backdrop && { borderColor: colors.primary, borderWidth: 2 },
-                  ]}
+                  onPress={() => setIsCustomCover(true)}
+                  style={[styles.gridItem, { borderColor: colors.primary, borderWidth: 2 }]}
                 >
-                  <Image source={{ uri: b }} style={{ width: "100%", height: "100%" }} contentFit="cover" />
-                  {i === backdrop && (
-                    <View style={styles.gridCheck}>
-                      <Icon name="check" size={14} color={colors.onPrimary} />
-                    </View>
-                  )}
+                  <Image
+                    source={{ uri: coverUrl }}
+                    style={{ width: "100%", height: "100%" }}
+                    contentFit="cover"
+                  />
+                  <View style={styles.gridCheck}>
+                    <Icon name="check" size={14} color={colors.onPrimary} />
+                  </View>
                 </Pressable>
-              ))}
+              )}
+              {BACKDROPS.map((b) => {
+                const active = !isCustomCover && coverUrl === b;
+                return (
+                  <Pressable
+                    key={b}
+                    onPress={() => {
+                      setCoverUrl(b);
+                      setIsCustomCover(false);
+                    }}
+                    style={[
+                      styles.gridItem,
+                      active && { borderColor: colors.primary, borderWidth: 2 },
+                    ]}
+                  >
+                    <Image source={{ uri: b }} style={{ width: "100%", height: "100%" }} contentFit="cover" />
+                    {active && (
+                      <View style={styles.gridCheck}>
+                        <Icon name="check" size={14} color={colors.onPrimary} />
+                      </View>
+                    )}
+                  </Pressable>
+                );
+              })}
+              <Pressable
+                onPress={pickCover}
+                disabled={uploadingCover}
+                style={[styles.gridItem, styles.gridUpload]}
+              >
+                {uploadingCover ? (
+                  <ActivityIndicator size="small" color={colors.primary} />
+                ) : (
+                  <>
+                    <Icon name="add_circle" size={22} color={colors.onSurfaceVariant} />
+                    <Text style={styles.gridUploadText}>UPLOAD</Text>
+                  </>
+                )}
+              </Pressable>
             </View>
+            {coverError && <Text style={styles.coverError}>{coverError}</Text>}
 
             <Text style={styles.sectionLabel}>TAGS</Text>
             <View style={styles.tagWrap}>
@@ -236,7 +360,7 @@ function MobileCompose() {
         {step === 2 && (
           <ScrollView contentContainerStyle={styles.publishPanel}>
             <View style={styles.finalCard}>
-              <Image source={{ uri: BACKDROPS[backdrop] }} style={StyleSheet.absoluteFillObject} contentFit="cover" />
+              <Image source={{ uri: coverUrl }} style={StyleSheet.absoluteFillObject} contentFit="cover" />
               <LinearGradient
                 colors={["transparent", "rgba(0,0,0,0.85)"]}
                 locations={[0.3, 1]}
@@ -333,23 +457,43 @@ function MobileCompose() {
               </View>
             </View>
             <Pressable
-              onPress={() => setRecording((r) => !r)}
+              onPress={toggleRecording}
+              disabled={uploadingAudio}
               style={[
                 styles.recBtn,
                 {
-                  backgroundColor: recording ? colors.error : colors.primary,
+                  backgroundColor: recording
+                    ? colors.error
+                    : audioUrl
+                      ? colors.primaryContainer
+                      : colors.primary,
+                  opacity: uploadingAudio ? 0.6 : 1,
                 },
               ]}
             >
-              <Icon
-                name={recording ? "stop" : "mic"}
-                size={20}
-                color={recording ? colors.white : colors.onPrimary}
-              />
+              {uploadingAudio ? (
+                <ActivityIndicator size="small" color={colors.onPrimary} />
+              ) : (
+                <Icon
+                  name={recording ? "stop" : audioUrl ? "check" : "mic"}
+                  size={20}
+                  color={recording ? colors.white : colors.onPrimary}
+                />
+              )}
             </Pressable>
           </Glass>
           {recording && (
             <Text style={styles.recText}>● RECORDING {recDuration.toFixed(1)}s</Text>
+          )}
+          {!recording && !uploadingAudio && audioUrl && (
+            <Text style={[styles.recText, { color: colors.primary }]}>
+              ✓ NARRATION SAVED · TAP MIC TO RE-RECORD
+            </Text>
+          )}
+          {audioError && (
+            <Text style={[styles.recText, { color: colors.error }]}>
+              {audioError}
+            </Text>
           )}
         </View>
       )}
@@ -446,6 +590,28 @@ const styles = StyleSheet.create({
     backgroundColor: colors.primary,
     alignItems: "center",
     justifyContent: "center",
+  },
+  gridUpload: {
+    backgroundColor: "rgba(255,255,255,0.04)",
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.1)",
+    borderStyle: "dashed",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 4,
+  },
+  gridUploadText: {
+    color: colors.onSurfaceVariant,
+    fontFamily: fonts.bodyBold,
+    fontSize: 9,
+    letterSpacing: 1.4,
+  },
+  coverError: {
+    color: colors.error,
+    fontFamily: fonts.body,
+    fontSize: 12,
+    marginTop: -16,
+    marginBottom: 24,
   },
   tagWrap: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
   finalCard: {

@@ -1,34 +1,38 @@
 import { Image } from "expo-image";
 import { LinearGradient } from "expo-linear-gradient";
 import { useLocalSearchParams, useRouter } from "expo-router";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
+  Alert,
+  Platform,
   Pressable,
   ScrollView,
   StyleSheet,
   Text,
   View,
 } from "react-native";
+import { Audio, type AVPlaybackStatus } from "expo-av";
 import * as Haptics from "expo-haptics";
-import { DesktopReader } from "../../components/desktop/DesktopReader";
-import { DesktopShell } from "../../components/desktop/DesktopShell";
-import { Glass } from "../../components/Glass";
-import { Icon } from "../../components/Icon";
-import { LineReveal } from "../../components/LineReveal";
-import { Particles } from "../../components/Particles";
-import { useAuth } from "../../lib/auth";
-import { useIsDesktop } from "../../lib/breakpoints";
-import type { PoemWithStats } from "../../lib/database.types";
+import { DesktopReader } from "../../../components/desktop/DesktopReader";
+import { DesktopShell } from "../../../components/desktop/DesktopShell";
+import { Glass } from "../../../components/Glass";
+import { Icon } from "../../../components/Icon";
+import { LineReveal } from "../../../components/LineReveal";
+import { Particles } from "../../../components/Particles";
+import { useAuth } from "../../../lib/auth";
+import { useIsDesktop } from "../../../lib/breakpoints";
+import type { PoemWithStats } from "../../../lib/database.types";
 import {
+  deletePoem,
   fetchPoem,
   fetchUserBookmarks,
   fetchUserLikes,
   toggleBookmark as toggleBookmarkRemote,
   toggleLike as toggleLikeRemote,
-} from "../../lib/poems";
-import { formatReadTime } from "../../lib/syllables";
-import { colors, fonts, motion, radius } from "../../theme";
+} from "../../../lib/poems";
+import { formatReadTime } from "../../../lib/syllables";
+import { colors, fonts, motion, radius } from "../../../theme";
 
 export default function PoemScreen() {
   const isDesktop = useIsDesktop();
@@ -68,6 +72,47 @@ function MobileReader() {
   const [bookmarked, setBookmarked] = useState(false);
   const [playing, setPlaying] = useState(false);
   const [progress, setProgress] = useState(0);
+  const [duration, setDuration] = useState(0);
+  const [audioError, setAudioError] = useState<string | null>(null);
+  const soundRef = useRef<Audio.Sound | null>(null);
+  const [deleting, setDeleting] = useState(false);
+
+  const isAuthor = !!user && !!poem && user.id === poem.author_id;
+
+  function goBack() {
+    if (router.canGoBack()) router.back();
+    else router.replace("/(tabs)" as never);
+  }
+
+  function confirmDelete() {
+    if (!poem) return;
+    const msg = `Delete "${poem.title}"? This is permanent and removes likes, bookmarks, and comments too.`;
+    if (Platform.OS === "web") {
+      if (typeof window !== "undefined" && window.confirm(msg)) doDelete();
+      return;
+    }
+    Alert.alert("Delete poem?", msg, [
+      { text: "Cancel", style: "cancel" },
+      { text: "Delete", style: "destructive", onPress: doDelete },
+    ]);
+  }
+
+  async function doDelete() {
+    if (!poem) return;
+    setDeleting(true);
+    try {
+      await deletePoem(poem.id);
+      router.replace("/(tabs)" as never);
+    } catch (e) {
+      setDeleting(false);
+      const msg = `Couldn't delete: ${(e as Error).message}`;
+      if (Platform.OS === "web" && typeof window !== "undefined") {
+        window.alert(msg);
+      } else {
+        Alert.alert("Delete failed", msg);
+      }
+    }
+  }
 
   useEffect(() => {
     if (!id) return;
@@ -89,14 +134,73 @@ function MobileReader() {
     })();
   }, [id, user]);
 
-  // Fake playback progress until expo-av is wired up to a real audio file.
+  // Load the poem's narration into expo-av Audio.Sound when the poem changes.
   useEffect(() => {
-    if (!playing) return;
-    const t = setInterval(() => {
-      setProgress((p) => (p >= 1 ? 0 : p + 0.005));
-    }, 200);
-    return () => clearInterval(t);
-  }, [playing]);
+    let cancelled = false;
+    async function load() {
+      // Tear down whatever is currently loaded before swapping.
+      if (soundRef.current) {
+        try {
+          await soundRef.current.unloadAsync();
+        } catch {}
+        soundRef.current = null;
+      }
+      setPlaying(false);
+      setProgress(0);
+      setDuration(0);
+      setAudioError(null);
+      if (!poem?.audio_url) return;
+      try {
+        await Audio.setAudioModeAsync({ playsInSilentModeIOS: true });
+        const { sound } = await Audio.Sound.createAsync(
+          { uri: poem.audio_url },
+          { shouldPlay: false },
+          (status: AVPlaybackStatus) => {
+            if (!status.isLoaded) return;
+            const d = status.durationMillis ?? 0;
+            const p = status.positionMillis ?? 0;
+            setDuration(d / 1000);
+            setProgress(d > 0 ? p / d : 0);
+            setPlaying(status.isPlaying);
+            if (status.didJustFinish) {
+              setPlaying(false);
+              setProgress(0);
+              sound.setPositionAsync(0).catch(() => {});
+            }
+          }
+        );
+        if (cancelled) {
+          await sound.unloadAsync();
+          return;
+        }
+        soundRef.current = sound;
+      } catch (e) {
+        if (!cancelled) setAudioError((e as Error).message);
+      }
+    }
+    void load();
+    return () => {
+      cancelled = true;
+      if (soundRef.current) {
+        soundRef.current.unloadAsync().catch(() => {});
+        soundRef.current = null;
+      }
+    };
+  }, [poem?.id, poem?.audio_url]);
+
+  async function togglePlay() {
+    const sound = soundRef.current;
+    if (!sound) return;
+    try {
+      if (playing) {
+        await sound.pauseAsync();
+      } else {
+        await sound.playAsync();
+      }
+    } catch (e) {
+      setAudioError((e as Error).message);
+    }
+  }
 
   async function onToggleLike() {
     if (!user || !poem) return;
@@ -154,16 +258,34 @@ function MobileReader() {
 
       <ScrollView contentContainerStyle={styles.content}>
         <View style={styles.topNav}>
-          <Pressable onPress={() => router.back()} style={styles.navBtn}>
+          <Pressable onPress={goBack} style={styles.navBtn}>
             <Icon name="expand_more" size={22} color={colors.white} />
           </Pressable>
           <View style={{ alignItems: "center" }}>
             <Text style={styles.navOver}>NOW READING</Text>
             <Text style={styles.navBrand}>VERSIFY</Text>
           </View>
-          <Pressable style={styles.navBtn}>
-            <Icon name="more_horiz" size={20} color={colors.white} />
-          </Pressable>
+          {isAuthor ? (
+            <View style={{ flexDirection: "row", gap: 8 }}>
+              <Pressable
+                onPress={() => router.push(`/poem/${poem.id}/edit` as never)}
+                style={styles.navBtn}
+              >
+                <Icon name="edit" size={18} color={colors.white} />
+              </Pressable>
+              <Pressable
+                onPress={confirmDelete}
+                disabled={deleting}
+                style={[styles.navBtn, { opacity: deleting ? 0.5 : 1 }]}
+              >
+                <Icon name="close" size={18} color={colors.error} />
+              </Pressable>
+            </View>
+          ) : (
+            <Pressable style={styles.navBtn}>
+              <Icon name="more_horiz" size={20} color={colors.white} />
+            </Pressable>
+          )}
         </View>
 
         <View style={styles.body}>
@@ -278,17 +400,20 @@ function MobileReader() {
                   <Text style={styles.playerTitle}>
                     Narrated by {poem.author_name.split(" ")[0]}
                   </Text>
-                  <Text style={styles.playerSub}>DOLBY ATMOS</Text>
+                  <Text style={styles.playerSub}>
+                    {audioError
+                      ? "AUDIO UNAVAILABLE"
+                      : duration > 0
+                        ? `${Math.floor((duration * progress) / 60)}:${String(Math.floor((duration * progress) % 60)).padStart(2, "0")} / ${Math.floor(duration / 60)}:${String(Math.floor(duration % 60)).padStart(2, "0")}`
+                        : "LOADING…"}
+                  </Text>
                 </View>
               </View>
               <View style={styles.playerControls}>
                 <Pressable>
                   <Icon name="skip_previous" size={22} color={colors.onSurfaceVariant} />
                 </Pressable>
-                <Pressable
-                  onPress={() => setPlaying((p) => !p)}
-                  style={styles.playBtn}
-                >
+                <Pressable onPress={togglePlay} style={styles.playBtn}>
                   <Icon
                     name={playing ? "pause" : "play_arrow"}
                     size={26}

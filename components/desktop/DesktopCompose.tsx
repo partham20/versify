@@ -1,8 +1,16 @@
 import { Image } from "expo-image";
 import { LinearGradient } from "expo-linear-gradient";
 import { useRouter } from "expo-router";
-import { useMemo, useState } from "react";
-import { Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
+import {
+  isRecordingSupported,
+  startRecording,
+  uploadAudio,
+  type AudioRecorder,
+} from "../../lib/audio";
+import { useAuth } from "../../lib/auth";
+import { ACCEPT_MIMES, COVER_MAX_BYTES, uploadCover } from "../../lib/covers";
 import { publishPoem } from "../../lib/poems";
 import { countSyllables } from "../../lib/syllables";
 import { colors, fonts } from "../../theme";
@@ -33,13 +41,45 @@ const VIS_OPTIONS: Array<{ id: Visibility; icon: string; label: string }> = [
 
 export function DesktopCompose() {
   const router = useRouter();
+  const { user } = useAuth();
   const [title, setTitle] = useState("");
   const [body, setBody] = useState("");
-  const [backdrop, setBackdrop] = useState(0);
+  const [coverUrl, setCoverUrl] = useState<string>(BACKDROPS[0]);
+  // Track whether the active cover is a user upload so we can offer "Remove".
+  const [isCustomCover, setIsCustomCover] = useState(false);
+  const [uploadingCover, setUploadingCover] = useState(false);
+  const [coverError, setCoverError] = useState<string | null>(null);
+  const coverInput = useRef<HTMLInputElement | null>(null);
   const [tags, setTags] = useState<string[]>(["Solitude"]);
   const [visibility, setVisibility] = useState<Visibility>("public");
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  // Narration recording state
+  const [recorder, setRecorder] = useState<AudioRecorder | null>(null);
+  const [elapsedMs, setElapsedMs] = useState(0);
+  const [uploadingAudio, setUploadingAudio] = useState(false);
+  const [audioUrl, setAudioUrl] = useState<string | null>(null);
+  const [audioError, setAudioError] = useState<string | null>(null);
+  const tickRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const audioFileInput = useRef<HTMLInputElement | null>(null);
+
+  // Tick the elapsed counter while recording.
+  useEffect(() => {
+    if (!recorder) {
+      if (tickRef.current) clearInterval(tickRef.current);
+      tickRef.current = null;
+      return;
+    }
+    setElapsedMs(0);
+    tickRef.current = setInterval(() => {
+      setElapsedMs(Date.now() - recorder.startedAt);
+    }, 200);
+    return () => {
+      if (tickRef.current) clearInterval(tickRef.current);
+      tickRef.current = null;
+    };
+  }, [recorder]);
 
   const stats = useMemo(() => {
     const lines = body.split("\n").filter(Boolean).length;
@@ -47,8 +87,119 @@ export function DesktopCompose() {
     return { lines, syl };
   }, [body]);
 
+  async function toggleRecording() {
+    setAudioError(null);
+    if (recorder) {
+      // Stopping
+      try {
+        const blob = await recorder.stop();
+        setRecorder(null);
+        if (!user) {
+          setAudioError("Sign in to upload narration.");
+          return;
+        }
+        setUploadingAudio(true);
+        const url = await uploadAudio(user.id, blob);
+        setAudioUrl(url);
+      } catch (e) {
+        setAudioError(`Recording failed: ${(e as Error).message}`);
+      } finally {
+        setUploadingAudio(false);
+      }
+      return;
+    }
+
+    // Starting
+    if (!isRecordingSupported()) {
+      setAudioError("Microphone recording isn't supported in this browser.");
+      return;
+    }
+    try {
+      const r = await startRecording();
+      setRecorder(r);
+    } catch (e) {
+      // startRecording() already returns a user-actionable message for
+      // common permission / no-device / busy-mic cases.
+      setAudioError((e as Error).message);
+    }
+  }
+
+  function clearAudio() {
+    setAudioUrl(null);
+    setAudioError(null);
+  }
+
+  function pickAudioFile() {
+    setAudioError(null);
+    audioFileInput.current?.click();
+  }
+
+  async function handleAudioFile(ev: React.ChangeEvent<HTMLInputElement>) {
+    const file = ev.target.files?.[0];
+    ev.target.value = "";
+    if (!file) return;
+    if (!user) {
+      setAudioError("Sign in to upload narration.");
+      return;
+    }
+    if (!file.type.startsWith("audio/")) {
+      setAudioError("That doesn't look like an audio file. Try MP3, M4A, WAV, OGG, or WebM.");
+      return;
+    }
+    if (file.size > 25 * 1024 * 1024) {
+      setAudioError("Audio file is over 25 MB. Pick something smaller or trim it.");
+      return;
+    }
+    setUploadingAudio(true);
+    try {
+      const url = await uploadAudio(user.id, file);
+      setAudioUrl(url);
+    } catch (e) {
+      setAudioError(`Upload failed: ${(e as Error).message}`);
+    } finally {
+      setUploadingAudio(false);
+    }
+  }
+
+  function pickCoverFile() {
+    setCoverError(null);
+    coverInput.current?.click();
+  }
+
+  async function handleCoverFile(ev: React.ChangeEvent<HTMLInputElement>) {
+    const file = ev.target.files?.[0];
+    ev.target.value = "";
+    if (!file) return;
+    if (!user) {
+      setCoverError("Sign in to upload a cover.");
+      return;
+    }
+    if (!file.type.startsWith("image/")) {
+      setCoverError("That doesn't look like an image. Try JPG, PNG, WEBP, or GIF.");
+      return;
+    }
+    if (file.size > COVER_MAX_BYTES) {
+      setCoverError("Image is over 10 MB. Pick something smaller.");
+      return;
+    }
+    setUploadingCover(true);
+    try {
+      const url = await uploadCover(user.id, file, file.type);
+      setCoverUrl(url);
+      setIsCustomCover(true);
+    } catch (e) {
+      setCoverError(`Upload failed: ${(e as Error).message}`);
+    } finally {
+      setUploadingCover(false);
+    }
+  }
+
   async function publish() {
     if (!body.trim()) return;
+    if (recorder) {
+      setError("Stop recording before publishing.");
+      return;
+    }
     setSubmitting(true);
     setError(null);
     try {
@@ -57,7 +208,8 @@ export function DesktopCompose() {
         title: title.trim() || "Untitled",
         body: stanzas.length > 0 ? stanzas : [body.trim()],
         tags,
-        cover_url: BACKDROPS[backdrop],
+        cover_url: coverUrl,
+        audio_url: audioUrl,
         visibility,
       });
       router.replace("/(tabs)");
@@ -67,10 +219,14 @@ export function DesktopCompose() {
     }
   }
 
+  const isRecording = !!recorder;
+  const elapsedSec = Math.floor(elapsedMs / 1000);
+  const elapsedLabel = `${Math.floor(elapsedSec / 60)}:${String(elapsedSec % 60).padStart(2, "0")}`;
+
   return (
     <View style={styles.flex}>
       <Image
-        source={{ uri: BACKDROPS[backdrop] }}
+        source={{ uri: coverUrl }}
         style={StyleSheet.absoluteFillObject}
         contentFit="cover"
       />
@@ -174,26 +330,148 @@ export function DesktopCompose() {
             </View>
           </View>
 
-          <Pressable style={styles.recordBtn}>
-            <Icon name="mic" size={16} color={colors.error} />
-            <Text style={styles.recordText}>RECORD NARRATION</Text>
+          <Pressable
+            onPress={toggleRecording}
+            disabled={uploadingAudio}
+            style={[
+              styles.recordBtn,
+              isRecording
+                ? { backgroundColor: "rgba(255,107,107,0.18)", borderColor: colors.error }
+                : null,
+              audioUrl && !isRecording
+                ? { backgroundColor: "rgba(87,244,127,0.08)", borderColor: "rgba(87,244,127,0.25)" }
+                : null,
+            ]}
+          >
+            {uploadingAudio ? (
+              <>
+                <ActivityIndicator size="small" color={colors.primary} />
+                <Text style={styles.recordText}>UPLOADING…</Text>
+              </>
+            ) : isRecording ? (
+              <>
+                <View style={styles.recDot} />
+                <Text style={styles.recordText}>STOP · {elapsedLabel}</Text>
+              </>
+            ) : audioUrl ? (
+              <>
+                <Icon name="check_circle" size={16} color={colors.primary} />
+                <Text style={[styles.recordText, { color: colors.primary }]}>
+                  RE-RECORD NARRATION
+                </Text>
+              </>
+            ) : (
+              <>
+                <Icon name="mic" size={16} color={colors.error} />
+                <Text style={styles.recordText}>RECORD NARRATION</Text>
+              </>
+            )}
           </Pressable>
+
+          {!isRecording && !uploadingAudio && !audioUrl && (
+            <View style={styles.uploadAltRow}>
+              <View style={styles.uploadAltLine} />
+              <Text style={styles.uploadAltLabel}>OR</Text>
+              <View style={styles.uploadAltLine} />
+            </View>
+          )}
+
+          {!isRecording && !uploadingAudio && !audioUrl && (
+            <Pressable onPress={pickAudioFile} style={styles.uploadAudioBtn}>
+              <Icon name="add_circle" size={16} color={colors.white} />
+              <Text style={styles.uploadAudioText}>UPLOAD AUDIO FILE</Text>
+            </Pressable>
+          )}
+
+          <input
+            ref={audioFileInput}
+            type="file"
+            accept="audio/*"
+            onChange={handleAudioFile}
+            style={{ display: "none" }}
+          />
+
+          {audioUrl && !isRecording && !uploadingAudio && (
+            <View style={styles.audioPreview}>
+              {/*
+                react-native-web preserves <audio> as a real HTML element when
+                rendered inline. Wrapped in a View so it lays out correctly.
+              */}
+              <View style={{ width: "100%" }}>
+                <audio src={audioUrl} controls style={{ width: "100%" }} />
+              </View>
+              <View style={{ flexDirection: "row", gap: 12 }}>
+                <Pressable onPress={pickAudioFile} style={styles.removeAudioBtn}>
+                  <Icon name="add_circle" size={12} color={colors.onSurfaceVariant} />
+                  <Text style={styles.removeAudioText}>Replace</Text>
+                </Pressable>
+                <Pressable onPress={clearAudio} style={styles.removeAudioBtn}>
+                  <Icon name="close" size={12} color={colors.onSurfaceVariant} />
+                  <Text style={styles.removeAudioText}>Remove narration</Text>
+                </Pressable>
+              </View>
+            </View>
+          )}
+
+          {audioError && <Text style={styles.audioErrorText}>{audioError}</Text>}
 
           <Text style={[styles.railLabel, { marginTop: 28 }]}>BACKDROP</Text>
           <View style={styles.backdropGrid}>
-            {BACKDROPS.map((b, i) => (
+            {isCustomCover && (
               <Pressable
-                key={i}
-                onPress={() => setBackdrop(i)}
-                style={[
-                  styles.backdropCell,
-                  i === backdrop && { borderColor: colors.primary, borderWidth: 2 },
-                ]}
+                onPress={() => setIsCustomCover(true)}
+                style={[styles.backdropCell, { borderColor: colors.primary, borderWidth: 2 }]}
               >
-                <Image source={{ uri: b }} style={styles.backdropImg} contentFit="cover" />
+                <Image
+                  source={{ uri: coverUrl }}
+                  style={styles.backdropImg}
+                  contentFit="cover"
+                />
               </Pressable>
-            ))}
+            )}
+            {BACKDROPS.map((b) => {
+              const active = !isCustomCover && coverUrl === b;
+              return (
+                <Pressable
+                  key={b}
+                  onPress={() => {
+                    setCoverUrl(b);
+                    setIsCustomCover(false);
+                  }}
+                  style={[
+                    styles.backdropCell,
+                    active && { borderColor: colors.primary, borderWidth: 2 },
+                  ]}
+                >
+                  <Image source={{ uri: b }} style={styles.backdropImg} contentFit="cover" />
+                </Pressable>
+              );
+            })}
+            <Pressable
+              onPress={pickCoverFile}
+              disabled={uploadingCover}
+              style={[styles.backdropCell, styles.uploadCoverTile]}
+            >
+              {uploadingCover ? (
+                <ActivityIndicator size="small" color={colors.primary} />
+              ) : (
+                <>
+                  <Icon name="add_circle" size={20} color={colors.onSurfaceVariant} />
+                  <Text style={styles.uploadCoverText}>UPLOAD</Text>
+                </>
+              )}
+            </Pressable>
           </View>
+
+          <input
+            ref={coverInput}
+            type="file"
+            accept={ACCEPT_MIMES}
+            onChange={handleCoverFile}
+            style={{ display: "none" }}
+          />
+
+          {coverError && <Text style={styles.audioErrorText}>{coverError}</Text>}
 
           <Text style={[styles.railLabel, { marginTop: 28 }]}>TAGS</Text>
           <View style={styles.tagsRow}>
@@ -380,6 +658,74 @@ const styles = StyleSheet.create({
     fontSize: 12,
     letterSpacing: 1.4,
   },
+  recDot: {
+    width: 10,
+    height: 10,
+    borderRadius: 5,
+    backgroundColor: colors.error,
+  },
+  audioPreview: {
+    marginTop: 10,
+    padding: 10,
+    borderRadius: 12,
+    backgroundColor: colors.surfaceLow,
+    gap: 8,
+  },
+  removeAudioBtn: {
+    alignSelf: "flex-start",
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    paddingVertical: 4,
+    paddingHorizontal: 6,
+  },
+  removeAudioText: {
+    color: colors.onSurfaceVariant,
+    fontFamily: fonts.body,
+    fontSize: 11,
+  },
+  audioErrorText: {
+    marginTop: 8,
+    color: colors.error,
+    fontFamily: fonts.body,
+    fontSize: 11,
+    lineHeight: 16,
+  },
+  uploadAltRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+    marginTop: 12,
+    marginBottom: 8,
+  },
+  uploadAltLine: {
+    flex: 1,
+    height: 1,
+    backgroundColor: "rgba(255,255,255,0.06)",
+  },
+  uploadAltLabel: {
+    color: colors.onSurfaceVariant,
+    fontFamily: fonts.bodyBold,
+    fontSize: 9,
+    letterSpacing: 1.6,
+  },
+  uploadAudioBtn: {
+    paddingVertical: 14,
+    borderRadius: 12,
+    backgroundColor: "rgba(255,255,255,0.04)",
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.06)",
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 10,
+  },
+  uploadAudioText: {
+    color: colors.white,
+    fontFamily: fonts.bodyBold,
+    fontSize: 12,
+    letterSpacing: 1.4,
+  },
   backdropGrid: { flexDirection: "row", flexWrap: "wrap", gap: 6 },
   backdropCell: {
     width: "31%",
@@ -390,6 +736,21 @@ const styles = StyleSheet.create({
     borderColor: "transparent",
   },
   backdropImg: { width: "100%", height: "100%" },
+  uploadCoverTile: {
+    backgroundColor: "rgba(255,255,255,0.04)",
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.08)",
+    borderStyle: "dashed",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 4,
+  },
+  uploadCoverText: {
+    color: colors.onSurfaceVariant,
+    fontFamily: fonts.bodyBold,
+    fontSize: 8,
+    letterSpacing: 1.4,
+  },
   tagsRow: { flexDirection: "row", flexWrap: "wrap", gap: 6 },
   chip: {
     paddingVertical: 5,

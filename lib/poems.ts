@@ -159,3 +159,55 @@ export async function publishPoem(input: PublishInput, useEdgeFunction = false) 
   if (error) throw error;
   return { poem: { id: data.id } };
 }
+
+export type UpdatePoemInput = Partial<{
+  title: string;
+  body: string[];
+  tags: string[];
+  cover_url: string | null;
+  audio_url: string | null;
+  visibility: "public" | "followers" | "draft";
+}>;
+
+// Updates a poem the caller owns. RLS enforces author_id = auth.uid().
+// Recomputes syllables + read_time when the body changes; flips published_at
+// based on the visibility transition (draft <-> public/followers).
+export async function updatePoem(id: string, patch: UpdatePoemInput): Promise<void> {
+  const next: Record<string, unknown> = { ...patch };
+
+  if (patch.body) {
+    const fullText = patch.body.join(" ");
+    next.syllables = countSyllables(fullText);
+    next.read_time_seconds = readTimeSeconds(next.syllables as number);
+  }
+
+  if (patch.visibility) {
+    // Going to draft clears the published_at; coming out of draft stamps now.
+    // For non-draft -> non-draft transitions, leave published_at alone.
+    if (patch.visibility === "draft") {
+      next.published_at = null;
+    } else {
+      const { data: existing } = await supabase
+        .from("poems")
+        .select("published_at, visibility")
+        .eq("id", id)
+        .single();
+      const wasDraft = (existing as { visibility?: string } | null)?.visibility === "draft";
+      const hadDate = !!(existing as { published_at?: string | null } | null)?.published_at;
+      if (wasDraft || !hadDate) {
+        next.published_at = new Date().toISOString();
+      }
+    }
+  }
+
+  const { error } = await supabase
+    .from("poems")
+    .update(next as never)
+    .eq("id", id);
+  if (error) throw error;
+}
+
+export async function deletePoem(id: string): Promise<void> {
+  const { error } = await supabase.from("poems").delete().eq("id", id);
+  if (error) throw error;
+}

@@ -12,6 +12,7 @@ import {
 } from "react-native";
 import { useAuth } from "../../lib/auth";
 import type { PoemWithStats } from "../../lib/database.types";
+import { useNowPlaying } from "../../lib/nowPlaying";
 import { fetchFeed, searchPoems } from "../../lib/poems";
 import { formatReadTime } from "../../lib/syllables";
 import { colors, fonts, radius } from "../../theme";
@@ -60,6 +61,7 @@ const CATEGORIES: Array<{
 export function DesktopHome() {
   const router = useRouter();
   const { profile } = useAuth();
+  const play = useNowPlaying((s) => s.play);
   const [poems, setPoems] = useState<PoemWithStats[]>([]);
   const [loading, setLoading] = useState(true);
   const [query, setQuery] = useState("");
@@ -210,9 +212,15 @@ export function DesktopHome() {
                           {hero.syllables} SYLLABLES
                         </Text>
                       </View>
-                      <View style={styles.heroPlay}>
+                      <Pressable
+                        onPress={(e) => {
+                          (e as unknown as { stopPropagation?: () => void }).stopPropagation?.();
+                          play(hero);
+                        }}
+                        style={styles.heroPlay}
+                      >
                         <Icon name="play_arrow" size={28} color={colors.onPrimary} />
-                      </View>
+                      </Pressable>
                     </View>
                   </View>
                 </Pressable>
@@ -294,9 +302,15 @@ export function DesktopHome() {
                           contentFit="cover"
                         />
                       )}
-                      <View style={styles.followPlay}>
+                      <Pressable
+                        onPress={(e) => {
+                          (e as unknown as { stopPropagation?: () => void }).stopPropagation?.();
+                          play(p);
+                        }}
+                        style={styles.followPlay}
+                      >
                         <Icon name="play_arrow" size={20} color={colors.onPrimary} />
-                      </View>
+                      </Pressable>
                     </View>
                     <Text style={styles.followTitle} numberOfLines={1}>
                       {p.title}
