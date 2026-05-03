@@ -12,6 +12,7 @@ import { useAuth } from "../../lib/auth";
 import { useIsDesktop } from "../../lib/breakpoints";
 import type { PoemWithStats } from "../../lib/database.types";
 import { fetchPoemsByAuthor } from "../../lib/poems";
+import { shareProfile } from "../../lib/share";
 import { colors, fonts, radius } from "../../theme";
 
 type Tab = "poems" | "playlists" | "liked";
@@ -24,10 +25,23 @@ export default function Profile() {
 
 function ProfileScreen() {
   const router = useRouter();
-  const { profile, signOut } = useAuth();
+  const { profile } = useAuth();
   const [tab, setTab] = useState<Tab>("poems");
   const [poems, setPoems] = useState<PoemWithStats[]>([]);
   const [stats, setStats] = useState({ poems: 0, followers: 0, following: 0 });
+  const [shareLabel, setShareLabel] = useState("Share");
+
+  async function onShare() {
+    if (!profile) return;
+    const result = await shareProfile(profile.handle, profile.display_name);
+    if (result === "copied") {
+      setShareLabel("Copied");
+      setTimeout(() => setShareLabel("Share"), 1800);
+    } else if (result === "error") {
+      setShareLabel("Failed");
+      setTimeout(() => setShareLabel("Share"), 1800);
+    }
+  }
 
   useEffect(() => {
     if (!profile) return;
@@ -54,8 +68,8 @@ function ProfileScreen() {
           title="Profile"
           showAvatar={false}
           action={
-            <Pressable onPress={signOut} style={styles.iconBtn}>
-              <Icon name="more_horiz" size={20} color={colors.white} />
+            <Pressable onPress={() => router.push("/settings")} style={styles.iconBtn}>
+              <Icon name="settings" size={20} color={colors.white} />
             </Pressable>
           }
         />
@@ -100,8 +114,12 @@ function ProfileScreen() {
           </View>
 
           <View style={styles.actionsRow}>
-            <PrimaryButton label="Edit Profile" style={{ flex: 1 }} />
-            <GhostButton label="Share" style={{ width: 100 }} />
+            <PrimaryButton
+              label="Edit Profile"
+              style={{ flex: 1 }}
+              onPress={() => router.push("/profile/edit" as never)}
+            />
+            <GhostButton label={shareLabel} style={{ width: 110 }} onPress={onShare} />
           </View>
         </View>
 

@@ -46,6 +46,9 @@ function ProtectedNav() {
       <Stack.Screen name="poem/[id]" options={{ animation: "slide_from_bottom" }} />
       <Stack.Screen name="comments/[id]" options={{ animation: "slide_from_bottom" }} />
       <Stack.Screen name="compose" options={{ animation: "slide_from_bottom", presentation: "modal" }} />
+      <Stack.Screen name="profile/edit" options={{ animation: "slide_from_bottom" }} />
+      <Stack.Screen name="settings" options={{ animation: "slide_from_bottom" }} />
+      <Stack.Screen name="playlist/[id]" options={{ animation: "slide_from_bottom" }} />
     </Stack>
   );
 }
