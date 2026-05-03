@@ -7,6 +7,7 @@ import { useAuth } from "../../lib/auth";
 import type { CommentRow, PoemWithStats } from "../../lib/database.types";
 import { useNowPlaying } from "../../lib/nowPlaying";
 import {
+  deletePoem,
   fetchComments,
   fetchFeed,
   fetchUserBookmarks,
@@ -37,6 +38,37 @@ export function DesktopReader({ poem }: { poem: PoemWithStats }) {
   const [comments, setComments] = useState<CommentWithAuthor[]>([]);
   const [draft, setDraft] = useState("");
   const [similar, setSimilar] = useState<PoemWithStats[]>([]);
+  const [deleting, setDeleting] = useState(false);
+
+  const isAuthor = user?.id === poem.author_id;
+
+  function goBack() {
+    // Direct landing on a poem URL has no history. Fall back to the feed
+    // so "Back to feed" is never a no-op.
+    if (router.canGoBack()) router.back();
+    else router.replace("/(tabs)" as never);
+  }
+
+  async function onDelete() {
+    if (!isAuthor) return;
+    const ok =
+      typeof window !== "undefined" && typeof window.confirm === "function"
+        ? window.confirm(
+            `Delete "${poem.title}"? This is permanent and removes likes, bookmarks, and comments too.`
+          )
+        : true;
+    if (!ok) return;
+    setDeleting(true);
+    try {
+      await deletePoem(poem.id);
+      router.replace("/(tabs)" as never);
+    } catch (e) {
+      setDeleting(false);
+      if (typeof window !== "undefined") {
+        window.alert(`Couldn't delete: ${(e as Error).message}`);
+      }
+    }
+  }
 
   useEffect(() => {
     setNowPlaying(poem);
@@ -112,11 +144,32 @@ export function DesktopReader({ poem }: { poem: PoemWithStats }) {
         <Particles count={8} />
 
         <View style={styles.heroHeader}>
-          <Pressable onPress={() => router.back()} style={styles.backBtn}>
+          <Pressable onPress={goBack} style={styles.backBtn}>
             <Icon name="arrow_back_ios_new" size={14} color={colors.white} />
             <Text style={styles.backBtnText}>Back to feed</Text>
           </Pressable>
           <View style={{ flexDirection: "row", gap: 8 }}>
+            {isAuthor && (
+              <>
+                <Pressable
+                  onPress={() => router.push(`/poem/${poem.id}/edit` as never)}
+                  style={styles.glassBtn}
+                >
+                  <Icon name="edit" size={14} color={colors.white} />
+                  <Text style={styles.glassBtnText}>Edit</Text>
+                </Pressable>
+                <Pressable
+                  onPress={onDelete}
+                  disabled={deleting}
+                  style={[styles.glassBtn, { opacity: deleting ? 0.5 : 1 }]}
+                >
+                  <Icon name="close" size={14} color={colors.error} />
+                  <Text style={[styles.glassBtnText, { color: colors.error }]}>
+                    {deleting ? "Deleting…" : "Delete"}
+                  </Text>
+                </Pressable>
+              </>
+            )}
             <Pressable style={styles.glassBtn}>
               <Icon name="ios_share" size={14} color={colors.white} />
               <Text style={styles.glassBtnText}>Share</Text>

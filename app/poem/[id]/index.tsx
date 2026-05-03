@@ -4,6 +4,8 @@ import { useLocalSearchParams, useRouter } from "expo-router";
 import { useEffect, useState } from "react";
 import {
   ActivityIndicator,
+  Alert,
+  Platform,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -11,24 +13,25 @@ import {
   View,
 } from "react-native";
 import * as Haptics from "expo-haptics";
-import { DesktopReader } from "../../components/desktop/DesktopReader";
-import { DesktopShell } from "../../components/desktop/DesktopShell";
-import { Glass } from "../../components/Glass";
-import { Icon } from "../../components/Icon";
-import { LineReveal } from "../../components/LineReveal";
-import { Particles } from "../../components/Particles";
-import { useAuth } from "../../lib/auth";
-import { useIsDesktop } from "../../lib/breakpoints";
-import type { PoemWithStats } from "../../lib/database.types";
+import { DesktopReader } from "../../../components/desktop/DesktopReader";
+import { DesktopShell } from "../../../components/desktop/DesktopShell";
+import { Glass } from "../../../components/Glass";
+import { Icon } from "../../../components/Icon";
+import { LineReveal } from "../../../components/LineReveal";
+import { Particles } from "../../../components/Particles";
+import { useAuth } from "../../../lib/auth";
+import { useIsDesktop } from "../../../lib/breakpoints";
+import type { PoemWithStats } from "../../../lib/database.types";
 import {
+  deletePoem,
   fetchPoem,
   fetchUserBookmarks,
   fetchUserLikes,
   toggleBookmark as toggleBookmarkRemote,
   toggleLike as toggleLikeRemote,
-} from "../../lib/poems";
-import { formatReadTime } from "../../lib/syllables";
-import { colors, fonts, motion, radius } from "../../theme";
+} from "../../../lib/poems";
+import { formatReadTime } from "../../../lib/syllables";
+import { colors, fonts, motion, radius } from "../../../theme";
 
 export default function PoemScreen() {
   const isDesktop = useIsDesktop();
@@ -68,6 +71,44 @@ function MobileReader() {
   const [bookmarked, setBookmarked] = useState(false);
   const [playing, setPlaying] = useState(false);
   const [progress, setProgress] = useState(0);
+  const [deleting, setDeleting] = useState(false);
+
+  const isAuthor = !!user && !!poem && user.id === poem.author_id;
+
+  function goBack() {
+    if (router.canGoBack()) router.back();
+    else router.replace("/(tabs)" as never);
+  }
+
+  function confirmDelete() {
+    if (!poem) return;
+    const msg = `Delete "${poem.title}"? This is permanent and removes likes, bookmarks, and comments too.`;
+    if (Platform.OS === "web") {
+      if (typeof window !== "undefined" && window.confirm(msg)) doDelete();
+      return;
+    }
+    Alert.alert("Delete poem?", msg, [
+      { text: "Cancel", style: "cancel" },
+      { text: "Delete", style: "destructive", onPress: doDelete },
+    ]);
+  }
+
+  async function doDelete() {
+    if (!poem) return;
+    setDeleting(true);
+    try {
+      await deletePoem(poem.id);
+      router.replace("/(tabs)" as never);
+    } catch (e) {
+      setDeleting(false);
+      const msg = `Couldn't delete: ${(e as Error).message}`;
+      if (Platform.OS === "web" && typeof window !== "undefined") {
+        window.alert(msg);
+      } else {
+        Alert.alert("Delete failed", msg);
+      }
+    }
+  }
 
   useEffect(() => {
     if (!id) return;
@@ -154,16 +195,34 @@ function MobileReader() {
 
       <ScrollView contentContainerStyle={styles.content}>
         <View style={styles.topNav}>
-          <Pressable onPress={() => router.back()} style={styles.navBtn}>
+          <Pressable onPress={goBack} style={styles.navBtn}>
             <Icon name="expand_more" size={22} color={colors.white} />
           </Pressable>
           <View style={{ alignItems: "center" }}>
             <Text style={styles.navOver}>NOW READING</Text>
             <Text style={styles.navBrand}>VERSIFY</Text>
           </View>
-          <Pressable style={styles.navBtn}>
-            <Icon name="more_horiz" size={20} color={colors.white} />
-          </Pressable>
+          {isAuthor ? (
+            <View style={{ flexDirection: "row", gap: 8 }}>
+              <Pressable
+                onPress={() => router.push(`/poem/${poem.id}/edit` as never)}
+                style={styles.navBtn}
+              >
+                <Icon name="edit" size={18} color={colors.white} />
+              </Pressable>
+              <Pressable
+                onPress={confirmDelete}
+                disabled={deleting}
+                style={[styles.navBtn, { opacity: deleting ? 0.5 : 1 }]}
+              >
+                <Icon name="close" size={18} color={colors.error} />
+              </Pressable>
+            </View>
+          ) : (
+            <Pressable style={styles.navBtn}>
+              <Icon name="more_horiz" size={20} color={colors.white} />
+            </Pressable>
+          )}
         </View>
 
         <View style={styles.body}>
