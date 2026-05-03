@@ -10,6 +10,7 @@ import {
   type AudioRecorder,
 } from "../../lib/audio";
 import { useAuth } from "../../lib/auth";
+import { ACCEPT_MIMES, COVER_MAX_BYTES, uploadCover } from "../../lib/covers";
 import { publishPoem } from "../../lib/poems";
 import { countSyllables } from "../../lib/syllables";
 import { colors, fonts } from "../../theme";
@@ -43,7 +44,12 @@ export function DesktopCompose() {
   const { user } = useAuth();
   const [title, setTitle] = useState("");
   const [body, setBody] = useState("");
-  const [backdrop, setBackdrop] = useState(0);
+  const [coverUrl, setCoverUrl] = useState<string>(BACKDROPS[0]);
+  // Track whether the active cover is a user upload so we can offer "Remove".
+  const [isCustomCover, setIsCustomCover] = useState(false);
+  const [uploadingCover, setUploadingCover] = useState(false);
+  const [coverError, setCoverError] = useState<string | null>(null);
+  const coverInput = useRef<HTMLInputElement | null>(null);
   const [tags, setTags] = useState<string[]>(["Solitude"]);
   const [visibility, setVisibility] = useState<Visibility>("public");
   const [submitting, setSubmitting] = useState(false);
@@ -155,6 +161,39 @@ export function DesktopCompose() {
     }
   }
 
+  function pickCoverFile() {
+    setCoverError(null);
+    coverInput.current?.click();
+  }
+
+  async function handleCoverFile(ev: React.ChangeEvent<HTMLInputElement>) {
+    const file = ev.target.files?.[0];
+    ev.target.value = "";
+    if (!file) return;
+    if (!user) {
+      setCoverError("Sign in to upload a cover.");
+      return;
+    }
+    if (!file.type.startsWith("image/")) {
+      setCoverError("That doesn't look like an image. Try JPG, PNG, WEBP, or GIF.");
+      return;
+    }
+    if (file.size > COVER_MAX_BYTES) {
+      setCoverError("Image is over 10 MB. Pick something smaller.");
+      return;
+    }
+    setUploadingCover(true);
+    try {
+      const url = await uploadCover(user.id, file, file.type);
+      setCoverUrl(url);
+      setIsCustomCover(true);
+    } catch (e) {
+      setCoverError(`Upload failed: ${(e as Error).message}`);
+    } finally {
+      setUploadingCover(false);
+    }
+  }
+
   async function publish() {
     if (!body.trim()) return;
     if (recorder) {
@@ -169,7 +208,7 @@ export function DesktopCompose() {
         title: title.trim() || "Untitled",
         body: stanzas.length > 0 ? stanzas : [body.trim()],
         tags,
-        cover_url: BACKDROPS[backdrop],
+        cover_url: coverUrl,
         audio_url: audioUrl,
         visibility,
       });
@@ -187,7 +226,7 @@ export function DesktopCompose() {
   return (
     <View style={styles.flex}>
       <Image
-        source={{ uri: BACKDROPS[backdrop] }}
+        source={{ uri: coverUrl }}
         style={StyleSheet.absoluteFillObject}
         contentFit="cover"
       />
@@ -378,19 +417,61 @@ export function DesktopCompose() {
 
           <Text style={[styles.railLabel, { marginTop: 28 }]}>BACKDROP</Text>
           <View style={styles.backdropGrid}>
-            {BACKDROPS.map((b, i) => (
+            {isCustomCover && (
               <Pressable
-                key={i}
-                onPress={() => setBackdrop(i)}
-                style={[
-                  styles.backdropCell,
-                  i === backdrop && { borderColor: colors.primary, borderWidth: 2 },
-                ]}
+                onPress={() => setIsCustomCover(true)}
+                style={[styles.backdropCell, { borderColor: colors.primary, borderWidth: 2 }]}
               >
-                <Image source={{ uri: b }} style={styles.backdropImg} contentFit="cover" />
+                <Image
+                  source={{ uri: coverUrl }}
+                  style={styles.backdropImg}
+                  contentFit="cover"
+                />
               </Pressable>
-            ))}
+            )}
+            {BACKDROPS.map((b) => {
+              const active = !isCustomCover && coverUrl === b;
+              return (
+                <Pressable
+                  key={b}
+                  onPress={() => {
+                    setCoverUrl(b);
+                    setIsCustomCover(false);
+                  }}
+                  style={[
+                    styles.backdropCell,
+                    active && { borderColor: colors.primary, borderWidth: 2 },
+                  ]}
+                >
+                  <Image source={{ uri: b }} style={styles.backdropImg} contentFit="cover" />
+                </Pressable>
+              );
+            })}
+            <Pressable
+              onPress={pickCoverFile}
+              disabled={uploadingCover}
+              style={[styles.backdropCell, styles.uploadCoverTile]}
+            >
+              {uploadingCover ? (
+                <ActivityIndicator size="small" color={colors.primary} />
+              ) : (
+                <>
+                  <Icon name="add_circle" size={20} color={colors.onSurfaceVariant} />
+                  <Text style={styles.uploadCoverText}>UPLOAD</Text>
+                </>
+              )}
+            </Pressable>
           </View>
+
+          <input
+            ref={coverInput}
+            type="file"
+            accept={ACCEPT_MIMES}
+            onChange={handleCoverFile}
+            style={{ display: "none" }}
+          />
+
+          {coverError && <Text style={styles.audioErrorText}>{coverError}</Text>}
 
           <Text style={[styles.railLabel, { marginTop: 28 }]}>TAGS</Text>
           <View style={styles.tagsRow}>
@@ -655,6 +736,21 @@ const styles = StyleSheet.create({
     borderColor: "transparent",
   },
   backdropImg: { width: "100%", height: "100%" },
+  uploadCoverTile: {
+    backgroundColor: "rgba(255,255,255,0.04)",
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.08)",
+    borderStyle: "dashed",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 4,
+  },
+  uploadCoverText: {
+    color: colors.onSurfaceVariant,
+    fontFamily: fonts.bodyBold,
+    fontSize: 8,
+    letterSpacing: 1.4,
+  },
   tagsRow: { flexDirection: "row", flexWrap: "wrap", gap: 6 },
   chip: {
     paddingVertical: 5,

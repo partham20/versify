@@ -1,6 +1,6 @@
 import { Image } from "expo-image";
 import { useLocalSearchParams, useRouter } from "expo-router";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Pressable,
@@ -15,6 +15,7 @@ import { DesktopShell } from "../../../components/desktop/DesktopShell";
 import { Icon } from "../../../components/Icon";
 import { useAuth } from "../../../lib/auth";
 import { useIsDesktop } from "../../../lib/breakpoints";
+import { ACCEPT_MIMES, COVER_MAX_BYTES, uploadCover } from "../../../lib/covers";
 import type { PoemWithStats } from "../../../lib/database.types";
 import { fetchPoem, updatePoem } from "../../../lib/poems";
 import { countSyllables } from "../../../lib/syllables";
@@ -72,6 +73,9 @@ function EditPoemScreen() {
   const [coverUrl, setCoverUrl] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [uploadingCover, setUploadingCover] = useState(false);
+  const [coverError, setCoverError] = useState<string | null>(null);
+  const coverInput = useRef<HTMLInputElement | null>(null);
 
   useEffect(() => {
     if (!id) return;
@@ -98,6 +102,34 @@ function EditPoemScreen() {
     const syl = countSyllables(body);
     return { lines, syl };
   }, [body]);
+
+  function pickCoverFile() {
+    setCoverError(null);
+    coverInput.current?.click();
+  }
+
+  async function handleCoverFile(ev: React.ChangeEvent<HTMLInputElement>) {
+    const file = ev.target.files?.[0];
+    ev.target.value = "";
+    if (!file || !user) return;
+    if (!file.type.startsWith("image/")) {
+      setCoverError("That doesn't look like an image. Try JPG, PNG, WEBP, or GIF.");
+      return;
+    }
+    if (file.size > COVER_MAX_BYTES) {
+      setCoverError("Image is over 10 MB. Pick something smaller.");
+      return;
+    }
+    setUploadingCover(true);
+    try {
+      const url = await uploadCover(user.id, file, file.type);
+      setCoverUrl(url);
+    } catch (e) {
+      setCoverError(`Upload failed: ${(e as Error).message}`);
+    } finally {
+      setUploadingCover(false);
+    }
+  }
 
   async function save() {
     if (!poem) return;
@@ -207,6 +239,22 @@ function EditPoemScreen() {
 
         <Text style={[styles.label, { marginTop: 24 }]}>BACKDROP</Text>
         <View style={styles.backdropGrid}>
+          {/* If the current cover isn't one of the presets, show it as a
+              dedicated "current" tile so the user sees what's selected. */}
+          {coverUrl && !BACKDROPS.includes(coverUrl) && (
+            <View
+              style={[
+                styles.backdropCell,
+                { borderColor: colors.primary, borderWidth: 2 },
+              ]}
+            >
+              <Image
+                source={{ uri: coverUrl }}
+                style={styles.backdropImg}
+                contentFit="cover"
+              />
+            </View>
+          )}
           {BACKDROPS.map((b) => (
             <Pressable
               key={b}
@@ -220,6 +268,20 @@ function EditPoemScreen() {
             </Pressable>
           ))}
           <Pressable
+            onPress={pickCoverFile}
+            disabled={uploadingCover}
+            style={[styles.backdropCell, styles.backdropUpload]}
+          >
+            {uploadingCover ? (
+              <ActivityIndicator size="small" color={colors.primary} />
+            ) : (
+              <>
+                <Icon name="add_circle" size={22} color={colors.onSurfaceVariant} />
+                <Text style={styles.backdropUploadText}>UPLOAD</Text>
+              </>
+            )}
+          </Pressable>
+          <Pressable
             onPress={() => setCoverUrl(null)}
             style={[
               styles.backdropCell,
@@ -230,6 +292,19 @@ function EditPoemScreen() {
             <Icon name="close" size={20} color={colors.onSurfaceVariant} />
           </Pressable>
         </View>
+        <input
+          ref={coverInput}
+          type="file"
+          accept={ACCEPT_MIMES}
+          onChange={handleCoverFile}
+          style={{ display: "none" }}
+        />
+        {coverError && (
+          <View style={styles.errorBox}>
+            <Icon name="close" size={14} color={colors.error} />
+            <Text style={styles.errorText}>{coverError}</Text>
+          </View>
+        )}
 
         <Text style={[styles.label, { marginTop: 24 }]}>TAGS</Text>
         <View style={styles.tagsRow}>
@@ -373,6 +448,21 @@ const styles = StyleSheet.create({
     backgroundColor: colors.surfaceHigh,
     alignItems: "center",
     justifyContent: "center",
+  },
+  backdropUpload: {
+    backgroundColor: "rgba(255,255,255,0.04)",
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.1)",
+    borderStyle: "dashed",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 4,
+  },
+  backdropUploadText: {
+    color: colors.onSurfaceVariant,
+    fontFamily: fonts.bodyBold,
+    fontSize: 9,
+    letterSpacing: 1.4,
   },
 
   tagsRow: { marginTop: 10, flexDirection: "row", flexWrap: "wrap", gap: 6 },
