@@ -521,11 +521,11 @@ const styles = {
   heroGrid: {
     flexDirection: "row" as const,
     gap: 32,
-    alignItems: "stretch" as const,
+    alignItems: "flex-start" as const,
   },
   heroCard: {
     flex: 1.4,
-    minHeight: 360,
+    aspectRatio: 1,
     borderRadius: 24,
     overflow: "hidden" as const,
     backgroundColor: colors.surfaceLow,

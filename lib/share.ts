@@ -2,9 +2,29 @@ import { Platform, Share } from "react-native";
 
 export type ShareResult = "shared" | "copied" | "cancelled" | "error";
 
-// Share a public profile. Native uses the OS share sheet; mobile-web uses
-// navigator.share when available; desktop-web falls back to copying the URL
-// to the clipboard so the caller can show a "Copied!" confirmation.
+function legacyCopy(text: string): boolean {
+  if (typeof document === "undefined") return false;
+  try {
+    const ta = document.createElement("textarea");
+    ta.value = text;
+    ta.setAttribute("readonly", "");
+    ta.style.position = "fixed";
+    ta.style.top = "-9999px";
+    document.body.appendChild(ta);
+    ta.select();
+    const ok = document.execCommand("copy");
+    document.body.removeChild(ta);
+    return ok;
+  } catch {
+    return false;
+  }
+}
+
+// Share a public profile. On native we use the OS share sheet. On mobile web
+// we try navigator.share first (gives the native share sheet), otherwise we
+// always fall back to copying the URL to the clipboard — including a legacy
+// execCommand path so it works on insecure contexts (http://) where
+// navigator.clipboard is unavailable.
 export async function shareProfile(
   handle: string,
   displayName: string
@@ -17,7 +37,10 @@ export async function shareProfile(
     const nav: Navigator | undefined =
       typeof navigator !== "undefined" ? navigator : undefined;
 
-    if (nav && typeof nav.share === "function") {
+    const isMobileWeb =
+      !!nav?.userAgent && /android|iphone|ipad|ipod/i.test(nav.userAgent);
+
+    if (isMobileWeb && nav && typeof nav.share === "function") {
       try {
         await nav.share({ title, text: message, url });
         return "shared";
@@ -27,15 +50,16 @@ export async function shareProfile(
       }
     }
 
-    if (nav && nav.clipboard && typeof nav.clipboard.writeText === "function") {
+    if (nav?.clipboard && typeof nav.clipboard.writeText === "function") {
       try {
         await nav.clipboard.writeText(url);
         return "copied";
       } catch {
-        return "error";
+        // fall through to legacy
       }
     }
-    return "error";
+
+    return legacyCopy(url) ? "copied" : "error";
   }
 
   try {

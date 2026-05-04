@@ -67,20 +67,26 @@ function ExploreScreen() {
           </View>
         </View>
 
-        {results.length > 0 ? (
-          <View style={{ paddingHorizontal: 20, gap: 12 }}>
-            {results.map((p) => (
-              <Pressable key={p.id} onPress={() => router.push(`/poem/${p.id}`)} style={styles.resultRow}>
-                {p.cover_url && (
-                  <Image source={{ uri: p.cover_url }} style={styles.resultCover} contentFit="cover" />
-                )}
-                <View style={{ flex: 1 }}>
-                  <Text style={styles.resultTitle}>{p.title}</Text>
-                  <Text style={styles.resultAuthor}>{p.author_name}</Text>
-                </View>
-              </Pressable>
-            ))}
-          </View>
+        {query.trim().length > 0 ? (
+          results.length > 0 ? (
+            <View style={{ paddingHorizontal: 20, gap: 12 }}>
+              {results.map((p) => (
+                <Pressable key={p.id} onPress={() => router.push(`/poem/${p.id}`)} style={styles.resultRow}>
+                  {p.cover_url && (
+                    <Image source={{ uri: p.cover_url }} style={styles.resultCover} contentFit="cover" />
+                  )}
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.resultTitle}>{p.title}</Text>
+                    <Text style={styles.resultAuthor}>{p.author_name}</Text>
+                  </View>
+                </Pressable>
+              ))}
+            </View>
+          ) : (
+            <View style={{ paddingHorizontal: 20, paddingTop: 24 }}>
+              <Text style={styles.resultAuthor}>No matches for "{query.trim()}".</Text>
+            </View>
+          )
         ) : (
           <>
             <View style={{ paddingHorizontal: 20, paddingBottom: 24 }}>

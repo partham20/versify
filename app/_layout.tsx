@@ -1,13 +1,9 @@
 import {
   useFonts,
-  Fraunces_700Bold,
-  Fraunces_800ExtraBold,
-  Fraunces_800ExtraBold_Italic,
-} from "@expo-google-fonts/fraunces";
-import {
   Manrope_500Medium,
   Manrope_600SemiBold,
   Manrope_700Bold,
+  Manrope_800ExtraBold,
 } from "@expo-google-fonts/manrope";
 import { Stack, useRouter, useSegments } from "expo-router";
 import { StatusBar } from "expo-status-bar";
@@ -56,12 +52,10 @@ function ProtectedNav() {
 
 export default function RootLayout() {
   const [fontsLoaded] = useFonts({
-    Fraunces_700Bold,
-    Fraunces_800ExtraBold,
-    Fraunces_800ExtraBold_Italic,
     Manrope_500Medium,
     Manrope_600SemiBold,
     Manrope_700Bold,
+    Manrope_800ExtraBold,
   });
 
   if (!fontsLoaded) return null;

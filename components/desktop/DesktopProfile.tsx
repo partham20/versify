@@ -29,6 +29,9 @@ export function DesktopProfile() {
     if (result === "copied") {
       setShareLabel("Link copied");
       setTimeout(() => setShareLabel("Share"), 1800);
+    } else if (result === "shared") {
+      setShareLabel("Shared");
+      setTimeout(() => setShareLabel("Share"), 1800);
     } else if (result === "error") {
       setShareLabel("Couldn't share");
       setTimeout(() => setShareLabel("Share"), 1800);
@@ -123,11 +126,17 @@ export function DesktopProfile() {
               <Text style={styles.ghostBtnText}>Write a poem</Text>
             </Pressable>
             <Pressable onPress={onShare} style={styles.ghostBtn}>
-              <Icon
-                name={shareLabel === "Link copied" ? "check" : "ios_share"}
-                size={14}
-                color={shareLabel === "Link copied" ? colors.primary : colors.white}
-              />
+              {(() => {
+                const success =
+                  shareLabel === "Link copied" || shareLabel === "Shared";
+                return (
+                  <Icon
+                    name={success ? "check" : "ios_share"}
+                    size={14}
+                    color={success ? colors.primary : colors.white}
+                  />
+                );
+              })()}
               <Text style={styles.ghostBtnText}>{shareLabel}</Text>
             </Pressable>
             <Pressable

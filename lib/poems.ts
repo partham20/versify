@@ -26,9 +26,42 @@ export async function fetchPoem(id: string): Promise<PoemWithStats | null> {
 export async function searchPoems(query: string, limit = 30): Promise<PoemWithStats[]> {
   const q = query.trim();
   if (!q) return [];
-  const { data, error } = await supabase.rpc("search_poems", { q, max_results: limit });
-  if (error) throw error;
-  return (data ?? []) as PoemWithStats[];
+
+  // Preferred: ranked full-text search via the search_poems RPC.
+  try {
+    const { data, error } = await supabase.rpc("search_poems", { q, max_results: limit });
+    if (!error) {
+      const rows = (data ?? []) as PoemWithStats[];
+      if (rows.length > 0) return rows;
+    }
+  } catch {
+    // RPC missing (migration not applied) or threw — fall through to client-side.
+  }
+
+  // Fallback: pull a chunk of public poems and filter locally. Works even when
+  // the search migration hasn't been applied to this Supabase project.
+  const { data: rows, error } = await supabase
+    .from("poems_with_stats")
+    .select("*")
+    .eq("visibility", "public")
+    .order("published_at", { ascending: false, nullsFirst: false })
+    .limit(200);
+  if (error) return [];
+  const ql = q.toLowerCase();
+  return ((rows ?? []) as PoemWithStats[])
+    .filter((p) => {
+      const hay = [
+        p.title,
+        p.author_name,
+        p.author_handle,
+        (p.tags ?? []).join(" "),
+        (p.body ?? []).join(" "),
+      ]
+        .join(" ")
+        .toLowerCase();
+      return hay.includes(ql);
+    })
+    .slice(0, limit);
 }
 
 export async function fetchPoemsByAuthor(authorId: string): Promise<PoemWithStats[]> {
