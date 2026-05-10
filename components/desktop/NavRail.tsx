@@ -5,8 +5,9 @@ import { useEffect, useState } from "react";
 import { Pressable, ScrollView, Text, View } from "react-native";
 import { useAuth } from "../../lib/auth";
 import { fetchUserPlaylists, type PlaylistWithCount } from "../../lib/playlists";
-import { colors, fonts, radius } from "../../theme";
+import { colors, fonts } from "../../theme";
 import { Icon, type IconName } from "../Icon";
+import { Logo } from "../Logo";
 
 const NAV_ITEMS: Array<{ id: string; label: string; icon: IconName; href: string }> = [
   { id: "index", label: "Home", icon: "home", href: "/(tabs)" },
@@ -35,20 +36,7 @@ export function NavRail() {
   return (
     <View style={[styles.rail]}>
       <View style={styles.brandRow}>
-        <LinearGradient
-          colors={[colors.primary, colors.primaryContainer]}
-          start={{ x: 0, y: 0 }}
-          end={{ x: 1, y: 1 }}
-          style={styles.logo}
-        >
-          <Icon name="auto_stories" size={18} color={colors.onPrimary} />
-        </LinearGradient>
-        <View>
-          <Text style={styles.brand}>
-            Versify<Text style={{ color: colors.primary }}>.</Text>
-          </Text>
-          <Text style={styles.brandSub}>POEMS, IN STEREO</Text>
-        </View>
+        <Logo height={72} />
       </View>
 
       <Pressable onPress={() => router.push("/compose")} style={styles.composeBtnWrap}>
@@ -160,27 +148,6 @@ const styles = {
     flexDirection: "row" as const,
     alignItems: "center" as const,
     gap: 10,
-  },
-  logo: {
-    width: 32,
-    height: 32,
-    borderRadius: 8,
-    alignItems: "center" as const,
-    justifyContent: "center" as const,
-  },
-  brand: {
-    fontFamily: fonts.headline,
-    fontSize: 22,
-    color: colors.white,
-    letterSpacing: -0.4,
-    lineHeight: 22,
-  },
-  brandSub: {
-    fontFamily: fonts.bodyBold,
-    fontSize: 8,
-    letterSpacing: 1.8,
-    color: colors.onSurfaceVariant,
-    marginTop: 2,
   },
   composeBtnWrap: { marginHorizontal: 18, marginBottom: 18 },
   composeBtn: {

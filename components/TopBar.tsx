@@ -2,6 +2,7 @@ import { Image, Pressable, StyleSheet, Text, View, type ViewStyle } from "react-
 import type { ReactNode } from "react";
 import { colors, fonts } from "../theme";
 import { Icon } from "./Icon";
+import { Logo } from "./Logo";
 
 type Props = {
   title?: string;
@@ -20,6 +21,7 @@ export function TopBar({
   action,
   style,
 }: Props) {
+  const isBrand = title === "Versify";
   return (
     <View style={[styles.bar, style]}>
       <View style={styles.left}>
@@ -32,7 +34,11 @@ export function TopBar({
             )}
           </Pressable>
         )}
-        <Text style={styles.title}>{title.toUpperCase()}</Text>
+        {isBrand ? (
+          <Logo height={44} />
+        ) : (
+          <Text style={styles.title}>{title.toUpperCase()}</Text>
+        )}
       </View>
       {action ?? (
         <Pressable style={styles.iconBtn}>
