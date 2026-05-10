@@ -56,6 +56,11 @@ const CATEGORIES: Array<{
     grad: ["#18181b", "#71717a"],
     img: "https://images.unsplash.com/photo-1444723121867-7a241cacace9?w=400&q=80",
   },
+  {
+    name: "Memory",
+    grad: ["#78350f", "#fbbf24"],
+    img: "https://images.unsplash.com/photo-1474968600831-eaf3a8ed8e21?w=400&q=80",
+  },
 ];
 
 export function DesktopHome() {
@@ -97,7 +102,7 @@ export function DesktopHome() {
 
   const today = DAYS[new Date().getDay()];
   const hero = poems[0];
-  const followFeed = poems.slice(1, 5);
+  const followFeed = poems.slice(1, 7);
   const recent = poems.slice(0, 8);
   const showResults = query.trim().length > 0;
 
@@ -655,21 +660,21 @@ const styles = {
     color: colors.onSurfaceVariant,
   },
 
-  moodGrid: { flexDirection: "row" as const, gap: 14, flexWrap: "wrap" as const },
+  moodGrid: { flexDirection: "row" as const, gap: 12, flexWrap: "wrap" as const },
   moodCard: {
     flex: 1,
-    minWidth: 140,
+    minWidth: 118,
     aspectRatio: 1,
-    borderRadius: 16,
+    borderRadius: 14,
     overflow: "hidden" as const,
     position: "relative" as const,
   },
   moodName: {
     position: "absolute" as const,
-    top: 14,
-    left: 14,
+    top: 12,
+    left: 12,
     fontFamily: fonts.headline,
-    fontSize: 17,
+    fontSize: 15,
     color: colors.white,
     letterSpacing: -0.2,
     zIndex: 2,
@@ -685,19 +690,19 @@ const styles = {
     opacity: 0.85,
   },
 
-  followGrid: { flexDirection: "row" as const, gap: 18, flexWrap: "wrap" as const },
+  followGrid: { flexDirection: "row" as const, gap: 14, flexWrap: "wrap" as const },
   followCard: {
     flex: 1,
-    minWidth: 200,
-    padding: 18,
-    borderRadius: 18,
+    minWidth: 168,
+    padding: 14,
+    borderRadius: 14,
     backgroundColor: colors.surfaceLow,
   },
   followCover: {
     aspectRatio: 1,
-    borderRadius: 12,
+    borderRadius: 10,
     overflow: "hidden" as const,
-    marginBottom: 14,
+    marginBottom: 12,
     backgroundColor: colors.surfaceHigh,
     position: "relative" as const,
   },
@@ -705,19 +710,19 @@ const styles = {
     position: "absolute" as const,
     bottom: 8,
     right: 8,
-    width: 40,
-    height: 40,
-    borderRadius: 20,
+    width: 36,
+    height: 36,
+    borderRadius: 18,
     backgroundColor: colors.primary,
     alignItems: "center" as const,
     justifyContent: "center" as const,
   },
-  followTitle: { fontFamily: fonts.headlineRegular, fontSize: 16, color: colors.white },
+  followTitle: { fontFamily: fonts.headlineRegular, fontSize: 14, color: colors.white },
   followAuthor: {
     fontFamily: fonts.body,
     fontSize: 11,
     color: colors.onSurfaceVariant,
-    marginTop: 4,
+    marginTop: 3,
   },
 
   tableWrap: {
