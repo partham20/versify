@@ -137,23 +137,23 @@ export function NowPlayingBar() {
       <View style={styles.center}>
         <View style={styles.transport}>
           <Pressable>
-            <Icon name="shuffle" size={18} color={colors.onSurfaceVariant} />
+            <Icon name="shuffle" size={16} color={colors.onSurfaceVariant} />
           </Pressable>
           <Pressable>
-            <Icon name="skip_previous" size={20} color={colors.white} />
+            <Icon name="skip_previous" size={18} color={colors.white} />
           </Pressable>
           <Pressable
             onPress={handlePlayPress}
             disabled={!hasAudio}
             style={[styles.playBtn, !hasAudio && { opacity: 0.4 }]}
           >
-            <Icon name={playing ? "pause" : "play_arrow"} size={22} color="#000" />
+            <Icon name={playing ? "pause" : "play_arrow"} size={18} color="#000" />
           </Pressable>
           <Pressable>
-            <Icon name="skip_next" size={20} color={colors.white} />
+            <Icon name="skip_next" size={18} color={colors.white} />
           </Pressable>
           <Pressable>
-            <Icon name="repeat" size={18} color={colors.onSurfaceVariant} />
+            <Icon name="repeat" size={16} color={colors.onSurfaceVariant} />
           </Pressable>
         </View>
         <View style={styles.progressRow}>
@@ -176,13 +176,13 @@ export function NowPlayingBar() {
 
       <View style={styles.right}>
         <Pressable>
-          <Icon name="format_quote" size={18} color={colors.onSurfaceVariant} />
+          <Icon name="format_quote" size={16} color={colors.onSurfaceVariant} />
         </Pressable>
         <Pressable>
-          <Icon name="library_books" size={18} color={colors.onSurfaceVariant} />
+          <Icon name="library_books" size={16} color={colors.onSurfaceVariant} />
         </Pressable>
         <Pressable>
-          <Icon name="volume_up" size={18} color={colors.onSurfaceVariant} />
+          <Icon name="volume_up" size={16} color={colors.onSurfaceVariant} />
         </Pressable>
         <View style={styles.volTrack}>
           <View style={styles.volFill} />
@@ -194,47 +194,47 @@ export function NowPlayingBar() {
 
 const styles = {
   bar: {
-    height: 78,
+    height: 64,
     backgroundColor: "#070707",
     borderTopWidth: 1,
     borderTopColor: "rgba(255,255,255,0.04)",
     flexDirection: "row" as const,
     alignItems: "center" as const,
-    paddingHorizontal: 24,
-    gap: 24,
+    paddingHorizontal: 16,
+    gap: 16,
     flexShrink: 0,
   },
   left: {
-    width: 280,
+    width: 260,
     flexDirection: "row" as const,
     alignItems: "center" as const,
-    gap: 12,
+    gap: 10,
     flexShrink: 0,
   },
-  cover: { width: 50, height: 50, borderRadius: 8 },
+  cover: { width: 40, height: 40, borderRadius: 4 },
   coverEmpty: {
     backgroundColor: colors.surfaceHigh,
     alignItems: "center" as const,
     justifyContent: "center" as const,
   },
   title: {
-    fontFamily: fonts.headlineRegular,
-    fontSize: 13,
+    fontFamily: fonts.bodySemiBold,
+    fontSize: 12,
     color: colors.white,
   },
-  author: { fontFamily: fonts.body, fontSize: 11, color: colors.onSurfaceVariant },
+  author: { fontFamily: fonts.body, fontSize: 10, color: colors.onSurfaceVariant, marginTop: 1 },
   center: {
     flex: 1,
     alignItems: "center" as const,
-    gap: 6,
-    maxWidth: 720,
+    gap: 4,
+    maxWidth: 660,
     alignSelf: "center" as const,
   },
-  transport: { flexDirection: "row" as const, alignItems: "center" as const, gap: 18 },
+  transport: { flexDirection: "row" as const, alignItems: "center" as const, gap: 14 },
   playBtn: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
+    width: 28,
+    height: 28,
+    borderRadius: 14,
     backgroundColor: colors.white,
     alignItems: "center" as const,
     justifyContent: "center" as const,
@@ -242,34 +242,33 @@ const styles = {
   progressRow: {
     flexDirection: "row" as const,
     alignItems: "center" as const,
-    gap: 10,
+    gap: 8,
     width: "100%" as const,
   },
   timeText: {
     fontFamily: fonts.bodySemiBold,
     fontSize: 10,
     color: colors.onSurfaceVariant,
-    minWidth: 32,
+    minWidth: 30,
     textAlign: "right" as const,
   },
   track: {
     flex: 1,
-    height: 6,
-    paddingVertical: 1,
+    height: 4,
     justifyContent: "center" as const,
     position: "relative" as const,
   },
   trackFill: {
     position: "absolute" as const,
     left: 0,
-    top: 1,
-    bottom: 1,
+    top: 0,
+    bottom: 0,
     backgroundColor: colors.primary,
     borderRadius: 999,
   },
   trackThumb: {
     position: "absolute" as const,
-    top: -2,
+    top: -3,
     width: 10,
     height: 10,
     borderRadius: 5,
@@ -283,11 +282,11 @@ const styles = {
     fontStyle: "italic" as const,
   },
   right: {
-    width: 280,
+    width: 260,
     flexDirection: "row" as const,
     alignItems: "center" as const,
     justifyContent: "flex-end" as const,
-    gap: 12,
+    gap: 10,
     flexShrink: 0,
   },
   volTrack: {
