@@ -1,6 +1,8 @@
 import { create } from "zustand";
 import type { PoemWithStats } from "./database.types";
 
+export type RepeatMode = "off" | "one" | "all";
+
 type NowPlayingState = {
   poem: PoemWithStats | null;
   playing: boolean;
@@ -10,6 +12,11 @@ type NowPlayingState = {
   // tells the audio element to seek even if the same fraction is requested
   // twice in a row.
   seekRequest: { token: number; value: number };
+  shuffle: boolean;
+  repeat: RepeatMode;
+  liked: Set<string>;
+  volume: number; // 0..1
+  muted: boolean;
   setPoem: (poem: PoemWithStats | null) => void;
   // play(poem) sets the poem AND starts playing. Used by every "play this
   // poem" button across the app so callers don't have to remember the dance.
@@ -19,6 +26,11 @@ type NowPlayingState = {
   setDuration: (v: number) => void;
   toggle: () => void;
   seek: (fraction: number) => void;
+  toggleShuffle: () => void;
+  cycleRepeat: () => void;
+  toggleLike: (id: string) => void;
+  setVolume: (v: number) => void;
+  toggleMute: () => void;
 };
 
 export const useNowPlaying = create<NowPlayingState>((set) => ({
@@ -27,6 +39,11 @@ export const useNowPlaying = create<NowPlayingState>((set) => ({
   progress: 0,
   duration: 0,
   seekRequest: { token: 0, value: 0 },
+  shuffle: false,
+  repeat: "off",
+  liked: new Set<string>(),
+  volume: 0.6,
+  muted: false,
   setPoem: (poem) =>
     set((s) => {
       // No-op if it's already the current poem — avoids resetting playback
@@ -48,4 +65,18 @@ export const useNowPlaying = create<NowPlayingState>((set) => ({
     set((s) => ({
       seekRequest: { token: s.seekRequest.token + 1, value: fraction },
     })),
+  toggleShuffle: () => set((s) => ({ shuffle: !s.shuffle })),
+  cycleRepeat: () =>
+    set((s) => ({
+      repeat: s.repeat === "off" ? "all" : s.repeat === "all" ? "one" : "off",
+    })),
+  toggleLike: (id) =>
+    set((s) => {
+      const next = new Set(s.liked);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return { liked: next };
+    }),
+  setVolume: (v) => set({ volume: Math.max(0, Math.min(1, v)), muted: false }),
+  toggleMute: () => set((s) => ({ muted: !s.muted })),
 }));
