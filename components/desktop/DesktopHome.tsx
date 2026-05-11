@@ -230,7 +230,7 @@ export function DesktopHome() {
                   </View>
                 </Pressable>
 
-                <View style={{ gap: 16 }}>
+                <View style={styles.heroSide}>
                   <View style={styles.editorNote}>
                     <Text style={styles.editorLabel}>EDITOR'S NOTE</Text>
                     <Text style={styles.editorBody}>
@@ -525,16 +525,25 @@ const styles = {
   },
   heroGrid: {
     flexDirection: "row" as const,
+    flexWrap: "wrap" as const,
     gap: 32,
     alignItems: "stretch" as const,
   },
   heroCard: {
     flex: 1.4,
-    minHeight: 360,
+    flexBasis: 360,
+    minWidth: 360,
+    minHeight: 420,
     borderRadius: 24,
     overflow: "hidden" as const,
     backgroundColor: colors.surfaceLow,
     position: "relative" as const,
+  },
+  heroSide: {
+    flex: 1,
+    flexBasis: 320,
+    minWidth: 320,
+    gap: 16,
   },
   heroImg: { position: "absolute" as const, inset: 0, width: "100%" as const, height: "100%" as const } as never,
   heroOverlay: { position: "absolute" as const, inset: 0 } as never,

@@ -34,11 +34,12 @@ export const colors = {
 } as const;
 
 export const fonts = {
-  // headlines — italicizable serif (loaded via @expo-google-fonts/fraunces)
-  headline: "Fraunces_800ExtraBold",
-  headlineItalic: "Fraunces_800ExtraBold_Italic",
-  headlineRegular: "Fraunces_700Bold",
-  // body sans (loaded via @expo-google-fonts/manrope)
+  // Single sans family across the app (Spotify-style display type).
+  // headlineItalic kept as a separate alias for accents — it now uses the
+  // same family, so screens still get visual weight via color, not slant.
+  headline: "Manrope_800ExtraBold",
+  headlineItalic: "Manrope_800ExtraBold",
+  headlineRegular: "Manrope_700Bold",
   body: "Manrope_500Medium",
   bodyBold: "Manrope_700Bold",
   bodySemiBold: "Manrope_600SemiBold",

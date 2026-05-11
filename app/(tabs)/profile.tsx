@@ -37,6 +37,9 @@ function ProfileScreen() {
     if (result === "copied") {
       setShareLabel("Copied");
       setTimeout(() => setShareLabel("Share"), 1800);
+    } else if (result === "shared") {
+      setShareLabel("Shared");
+      setTimeout(() => setShareLabel("Share"), 1800);
     } else if (result === "error") {
       setShareLabel("Failed");
       setTimeout(() => setShareLabel("Share"), 1800);

@@ -14,6 +14,87 @@ type EnrichedNotif = NotificationRow & {
   poem_title: string | null;
 };
 
+const DEMO_NOTIFS: EnrichedNotif[] = [
+  {
+    id: "demo-1",
+    user_id: "demo",
+    actor_id: "u1",
+    type: "like",
+    target_poem_id: "p1",
+    target_comment_id: null,
+    read: false,
+    created_at: new Date(Date.now() - 4 * 60_000).toISOString(),
+    actor_name: "Sora Ito",
+    actor_avatar: "https://i.pravatar.cc/120?img=47",
+    poem_title: "Solitude in Stanza",
+  },
+  {
+    id: "demo-2",
+    user_id: "demo",
+    actor_id: "u2",
+    type: "comment",
+    target_poem_id: "p2",
+    target_comment_id: "c1",
+    read: false,
+    created_at: new Date(Date.now() - 22 * 60_000).toISOString(),
+    actor_name: "Mira Okafor",
+    actor_avatar: "https://i.pravatar.cc/120?img=32",
+    poem_title: "Quiet Tides",
+  },
+  {
+    id: "demo-3",
+    user_id: "demo",
+    actor_id: "u3",
+    type: "follow",
+    target_poem_id: null,
+    target_comment_id: null,
+    read: true,
+    created_at: new Date(Date.now() - 2 * 3600_000).toISOString(),
+    actor_name: "Kenji Park",
+    actor_avatar: "https://i.pravatar.cc/120?img=12",
+    poem_title: null,
+  },
+  {
+    id: "demo-4",
+    user_id: "demo",
+    actor_id: "u4",
+    type: "feature",
+    target_poem_id: "p3",
+    target_comment_id: null,
+    read: true,
+    created_at: new Date(Date.now() - 6 * 3600_000).toISOString(),
+    actor_name: "Editorial",
+    actor_avatar: "https://i.pravatar.cc/120?img=5",
+    poem_title: "Daybreak Mosaic",
+  },
+  {
+    id: "demo-5",
+    user_id: "demo",
+    actor_id: "u5",
+    type: "mention",
+    target_poem_id: "p4",
+    target_comment_id: null,
+    read: true,
+    created_at: new Date(Date.now() - 26 * 3600_000).toISOString(),
+    actor_name: "Lila Chen",
+    actor_avatar: "https://i.pravatar.cc/120?img=23",
+    poem_title: "After the Frost",
+  },
+  {
+    id: "demo-6",
+    user_id: "demo",
+    actor_id: "u6",
+    type: "like",
+    target_poem_id: "p5",
+    target_comment_id: null,
+    read: true,
+    created_at: new Date(Date.now() - 3 * 86400_000).toISOString(),
+    actor_name: "Anaya Roy",
+    actor_avatar: "https://i.pravatar.cc/120?img=68",
+    poem_title: "Pale Lanterns",
+  },
+];
+
 const ICON_MAP: Record<NotificationRow["type"], { icon: string; color: string; verb: string }> = {
   like: { icon: "favorite", color: colors.primary, verb: "loved" },
   comment: { icon: "chat_bubble", color: colors.tertiary, verb: "echoed" },
@@ -51,6 +132,7 @@ export function DesktopInbox() {
 
   useEffect(() => {
     if (!user) {
+      setItems(DEMO_NOTIFS);
       setLoading(false);
       return;
     }
@@ -63,16 +145,15 @@ export function DesktopInbox() {
         .eq("user_id", user.id)
         .order("created_at", { ascending: false })
         .limit(80);
-      setItems(
-        ((data ?? []) as Array<Record<string, unknown>>).map((r) => ({
-          ...(r as unknown as NotificationRow),
-          actor_name:
-            ((r.actor as { display_name?: string } | null)?.display_name) ?? null,
-          actor_avatar:
-            ((r.actor as { avatar_url?: string } | null)?.avatar_url) ?? null,
-          poem_title: ((r.poem as { title?: string } | null)?.title) ?? null,
-        }))
-      );
+      const enriched = ((data ?? []) as Array<Record<string, unknown>>).map((r) => ({
+        ...(r as unknown as NotificationRow),
+        actor_name:
+          ((r.actor as { display_name?: string } | null)?.display_name) ?? null,
+        actor_avatar:
+          ((r.actor as { avatar_url?: string } | null)?.avatar_url) ?? null,
+        poem_title: ((r.poem as { title?: string } | null)?.title) ?? null,
+      }));
+      setItems(enriched.length > 0 ? enriched : DEMO_NOTIFS);
       setLoading(false);
     })();
   }, [user]);

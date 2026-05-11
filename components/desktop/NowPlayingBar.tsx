@@ -1,4 +1,5 @@
 import { Image } from "expo-image";
+import { useRouter } from "expo-router";
 import { useEffect, useRef, useState } from "react";
 import { Platform, Pressable, Text, View } from "react-native";
 import { useNowPlaying } from "../../lib/nowPlaying";
@@ -6,21 +7,36 @@ import { colors, fonts } from "../../theme";
 import { Icon } from "../Icon";
 
 export function NowPlayingBar() {
+  const router = useRouter();
   const poem = useNowPlaying((s) => s.poem);
   const playing = useNowPlaying((s) => s.playing);
   const progress = useNowPlaying((s) => s.progress);
   const duration = useNowPlaying((s) => s.duration);
   const seekRequest = useNowPlaying((s) => s.seekRequest);
+  const shuffle = useNowPlaying((s) => s.shuffle);
+  const repeat = useNowPlaying((s) => s.repeat);
+  const liked = useNowPlaying((s) => s.liked);
+  const volume = useNowPlaying((s) => s.volume);
+  const muted = useNowPlaying((s) => s.muted);
   const setPlaying = useNowPlaying((s) => s.setPlaying);
   const setProgress = useNowPlaying((s) => s.setProgress);
   const setDuration = useNowPlaying((s) => s.setDuration);
   const toggle = useNowPlaying((s) => s.toggle);
   const seek = useNowPlaying((s) => s.seek);
+  const toggleShuffle = useNowPlaying((s) => s.toggleShuffle);
+  const cycleRepeat = useNowPlaying((s) => s.cycleRepeat);
+  const toggleLike = useNowPlaying((s) => s.toggleLike);
+  const setVolume = useNowPlaying((s) => s.setVolume);
+  const toggleMute = useNowPlaying((s) => s.toggleMute);
 
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const [trackWidth, setTrackWidth] = useState(0);
+  const [volTrackWidth, setVolTrackWidth] = useState(0);
+  const [shareLabel, setShareLabel] = useState<string | null>(null);
 
   const hasAudio = !!poem?.audio_url;
+  const isLiked = poem ? liked.has(poem.id) : false;
+  const effectiveVolume = muted ? 0 : volume;
 
   // Load a fresh audio source when the poem (or its url) changes.
   useEffect(() => {
@@ -36,9 +52,7 @@ export function NowPlayingBar() {
     audio.load();
   }, [poem?.id, poem?.audio_url]);
 
-  // Mirror the `playing` boolean onto the audio element. Browsers may reject
-  // play() if there hasn't been a user gesture; we surface that by flipping
-  // the store back to paused.
+  // Mirror the `playing` boolean onto the audio element.
   useEffect(() => {
     if (Platform.OS !== "web") return;
     const audio = audioRef.current;
@@ -58,6 +72,15 @@ export function NowPlayingBar() {
     audio.currentTime = audio.duration * seekRequest.value;
   }, [seekRequest.token]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // Volume / mute → audio element. Re-applies when the source changes too,
+  // because the browser resets audio.volume to 1.0 on every fresh load().
+  useEffect(() => {
+    if (Platform.OS !== "web") return;
+    const audio = audioRef.current;
+    if (!audio) return;
+    audio.volume = effectiveVolume;
+  }, [effectiveVolume, poem?.audio_url]);
+
   // Subscribe to the audio element's events ONCE.
   useEffect(() => {
     if (Platform.OS !== "web") return;
@@ -71,6 +94,18 @@ export function NowPlayingBar() {
       if (isFinite(audio.duration)) setDuration(audio.duration);
     };
     const onEnded = () => {
+      // Read latest repeat from the store (closure would otherwise be stale).
+      const r = useNowPlaying.getState().repeat;
+      if (r === "one" || r === "all") {
+        try {
+          audio.currentTime = 0;
+          audio.play().catch(() => setPlaying(false));
+        } catch {
+          setProgress(0);
+          setPlaying(false);
+        }
+        return;
+      }
       setProgress(0);
       setPlaying(false);
     };
@@ -86,8 +121,6 @@ export function NowPlayingBar() {
     };
   }, [setProgress, setDuration, setPlaying]);
 
-  // For poems with no audio, the read_time_seconds gives us SOMETHING to
-  // show in the bar; we just leave the play button disabled.
   const totalSec = duration > 0 ? Math.round(duration) : poem ? poem.read_time_seconds : 204;
   const elapsedSec = Math.round(totalSec * progress);
   const fmt = (s: number) =>
@@ -99,10 +132,72 @@ export function NowPlayingBar() {
     seek(Math.min(1, Math.max(0, x / trackWidth)));
   }
 
+  function handleVolPress(e: { nativeEvent: { locationX?: number } }) {
+    if (volTrackWidth === 0) return;
+    const x = e.nativeEvent.locationX ?? 0;
+    setVolume(Math.min(1, Math.max(0, x / volTrackWidth)));
+  }
+
   function handlePlayPress() {
     if (!hasAudio) return;
     toggle();
   }
+
+  function handlePrev() {
+    seek(0);
+  }
+
+  function handleNext() {
+    // No track queue — emulate "end of track" by jumping to the end. The
+    // ended handler then honours the repeat mode.
+    seek(1);
+  }
+
+  function handleLike() {
+    if (poem) toggleLike(poem.id);
+  }
+
+  function handleOpenReader() {
+    if (poem) router.push(`/poem/${poem.id}`);
+  }
+
+  async function handleShare() {
+    if (!poem) return;
+    const url = `https://versify.app/p/${poem.id}`;
+    const nav: Navigator | undefined =
+      typeof navigator !== "undefined" ? navigator : undefined;
+    let ok = false;
+    if (nav?.clipboard?.writeText) {
+      try {
+        await nav.clipboard.writeText(url);
+        ok = true;
+      } catch {}
+    }
+    if (!ok && typeof document !== "undefined") {
+      try {
+        const ta = document.createElement("textarea");
+        ta.value = url;
+        ta.style.position = "fixed";
+        ta.style.top = "-9999px";
+        document.body.appendChild(ta);
+        ta.select();
+        ok = document.execCommand("copy");
+        document.body.removeChild(ta);
+      } catch {}
+    }
+    setShareLabel(ok ? "Copied" : "Failed");
+    setTimeout(() => setShareLabel(null), 1500);
+  }
+
+  const repeatColor = repeat === "off" ? colors.onSurfaceVariant : colors.primary;
+  const repeatIcon = repeat === "one" ? "repeat_one" : "repeat";
+  const shuffleColor = shuffle ? colors.primary : colors.onSurfaceVariant;
+
+  const volumeIcon = muted || effectiveVolume === 0
+    ? "volume_off"
+    : effectiveVolume < 0.4
+      ? "volume_down"
+      : "volume_up";
 
   return (
     <View style={styles.bar}>
@@ -128,65 +223,99 @@ export function NowPlayingBar() {
           </Text>
         </View>
         {poem && (
-          <Pressable>
-            <Icon name="favorite" size={16} color={colors.primary} />
+          <Pressable onPress={handleLike} hitSlop={8}>
+            <Icon
+              name={isLiked ? "favorite" : "favorite_border"}
+              size={16}
+              color={isLiked ? colors.primary : colors.onSurfaceVariant}
+            />
           </Pressable>
         )}
       </View>
 
       <View style={styles.center}>
-        <View style={styles.transport}>
-          <Pressable>
-            <Icon name="shuffle" size={16} color={colors.onSurfaceVariant} />
-          </Pressable>
-          <Pressable>
-            <Icon name="skip_previous" size={18} color={colors.white} />
-          </Pressable>
-          <Pressable
-            onPress={handlePlayPress}
-            disabled={!hasAudio}
-            style={[styles.playBtn, !hasAudio && { opacity: 0.4 }]}
-          >
-            <Icon name={playing ? "pause" : "play_arrow"} size={18} color="#000" />
-          </Pressable>
-          <Pressable>
-            <Icon name="skip_next" size={18} color={colors.white} />
-          </Pressable>
-          <Pressable>
-            <Icon name="repeat" size={16} color={colors.onSurfaceVariant} />
-          </Pressable>
+        <View style={styles.centerInner}>
+          <View style={styles.transport}>
+            <Pressable onPress={toggleShuffle} hitSlop={8}>
+              <Icon name="shuffle" size={18} color={shuffleColor} />
+            </Pressable>
+            <Pressable onPress={handlePrev} disabled={!poem} hitSlop={8}>
+              <Icon
+                name="skip_previous"
+                size={20}
+                color={poem ? colors.white : colors.onSurfaceVariant}
+              />
+            </Pressable>
+            <Pressable
+              onPress={handlePlayPress}
+              disabled={!hasAudio}
+              style={[styles.playBtn, !hasAudio && { opacity: 0.4 }]}
+            >
+              <Icon name={playing ? "pause" : "play_arrow"} size={22} color="#000" />
+            </Pressable>
+            <Pressable onPress={handleNext} disabled={!poem} hitSlop={8}>
+              <Icon
+                name="skip_next"
+                size={20}
+                color={poem ? colors.white : colors.onSurfaceVariant}
+              />
+            </Pressable>
+            <Pressable onPress={cycleRepeat} hitSlop={8}>
+              <Icon name={repeatIcon} size={18} color={repeatColor} />
+            </Pressable>
+          </View>
+          <View style={styles.progressRow}>
+            <Text style={styles.timeText}>{fmt(elapsedSec)}</Text>
+            <Pressable
+              style={styles.track}
+              onLayout={(e) => setTrackWidth(e.nativeEvent.layout.width)}
+              onPress={handleTrackPress}
+              disabled={!hasAudio}
+            >
+              <View style={[styles.trackFill, { width: `${progress * 100}%` }]} />
+              <View style={[styles.trackThumb, { left: `${progress * 100}%` }]} />
+            </Pressable>
+            <Text style={[styles.timeText, { textAlign: "left" }]}>{fmt(totalSec)}</Text>
+          </View>
+          {poem && !hasAudio && (
+            <Text style={styles.noAudio}>This poem has no narration yet.</Text>
+          )}
         </View>
-        <View style={styles.progressRow}>
-          <Text style={styles.timeText}>{fmt(elapsedSec)}</Text>
-          <Pressable
-            style={styles.track}
-            onLayout={(e) => setTrackWidth(e.nativeEvent.layout.width)}
-            onPress={handleTrackPress}
-            disabled={!hasAudio}
-          >
-            <View style={[styles.trackFill, { width: `${progress * 100}%` }]} />
-            <View style={[styles.trackThumb, { left: `${progress * 100}%` }]} />
-          </Pressable>
-          <Text style={[styles.timeText, { textAlign: "left" }]}>{fmt(totalSec)}</Text>
-        </View>
-        {poem && !hasAudio && (
-          <Text style={styles.noAudio}>This poem has no narration yet.</Text>
-        )}
       </View>
 
       <View style={styles.right}>
-        <Pressable>
-          <Icon name="format_quote" size={16} color={colors.onSurfaceVariant} />
+        <Pressable onPress={handleShare} disabled={!poem} hitSlop={8}>
+          <Icon
+            name={shareLabel === "Copied" ? "check" : "format_quote"}
+            size={18}
+            color={
+              shareLabel === "Copied"
+                ? colors.primary
+                : poem
+                  ? colors.white
+                  : colors.onSurfaceVariant
+            }
+          />
         </Pressable>
-        <Pressable>
-          <Icon name="library_books" size={16} color={colors.onSurfaceVariant} />
+        <Pressable onPress={handleOpenReader} disabled={!poem} hitSlop={8}>
+          <Icon
+            name="library_books"
+            size={18}
+            color={poem ? colors.white : colors.onSurfaceVariant}
+          />
         </Pressable>
-        <Pressable>
-          <Icon name="volume_up" size={16} color={colors.onSurfaceVariant} />
+        <Pressable onPress={toggleMute} hitSlop={8}>
+          <Icon name={volumeIcon} size={18} color={colors.white} />
         </Pressable>
-        <View style={styles.volTrack}>
-          <View style={styles.volFill} />
-        </View>
+        <Pressable
+          style={styles.volTrack}
+          onLayout={(e) => setVolTrackWidth(e.nativeEvent.layout.width)}
+          onPress={handleVolPress}
+          hitSlop={{ top: 10, bottom: 10, left: 4, right: 4 }}
+        >
+          <View style={[styles.volFill, { width: `${effectiveVolume * 100}%` }]} />
+          <View style={[styles.volThumb, { left: `${effectiveVolume * 100}%` }]} />
+        </Pressable>
       </View>
     </View>
   );
@@ -222,13 +351,17 @@ const styles = {
     fontSize: 12,
     color: colors.white,
   },
-  author: { fontFamily: fonts.body, fontSize: 10, color: colors.onSurfaceVariant, marginTop: 1 },
+  author: { fontFamily: fonts.body, fontSize: 11, color: colors.onSurfaceVariant },
   center: {
     flex: 1,
     alignItems: "center" as const,
-    gap: 4,
-    maxWidth: 660,
-    alignSelf: "center" as const,
+    minWidth: 0,
+  },
+  centerInner: {
+    width: "100%" as const,
+    maxWidth: 720,
+    gap: 6,
+    alignItems: "center" as const,
   },
   transport: { flexDirection: "row" as const, alignItems: "center" as const, gap: 14 },
   playBtn: {
@@ -282,18 +415,35 @@ const styles = {
     fontStyle: "italic" as const,
   },
   right: {
-    width: 260,
     flexDirection: "row" as const,
     alignItems: "center" as const,
-    justifyContent: "flex-end" as const,
-    gap: 10,
+    gap: 14,
     flexShrink: 0,
+    marginLeft: "auto" as const,
   },
   volTrack: {
-    width: 80,
-    height: 3,
+    width: 100,
+    height: 4,
     borderRadius: 999,
-    backgroundColor: "rgba(255,255,255,0.1)",
+    backgroundColor: "rgba(255,255,255,0.18)",
+    position: "relative" as const,
+    cursor: "pointer" as never,
   },
-  volFill: { width: "60%" as const, height: 3, backgroundColor: colors.white, borderRadius: 999 },
+  volFill: {
+    position: "absolute" as const,
+    left: 0,
+    top: 0,
+    bottom: 0,
+    backgroundColor: colors.white,
+    borderRadius: 999,
+  },
+  volThumb: {
+    position: "absolute" as const,
+    top: -2,
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: colors.white,
+    marginLeft: -4,
+  },
 };
