@@ -1,6 +1,6 @@
 import { Image } from "expo-image";
 import { LinearGradient } from "expo-linear-gradient";
-import { useRouter } from "expo-router";
+import { useLocalSearchParams, useRouter } from "expo-router";
 import { useEffect, useState } from "react";
 import { Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
 import { DesktopExplore } from "../../components/desktop/DesktopExplore";
@@ -29,8 +29,15 @@ export default function Explore() {
 
 function ExploreScreen() {
   const router = useRouter();
-  const [query, setQuery] = useState("");
+  const params = useLocalSearchParams<{ q?: string }>();
+  const initialQuery = typeof params.q === "string" ? params.q : "";
+  const [query, setQuery] = useState(initialQuery);
   const [results, setResults] = useState<PoemWithStats[]>([]);
+
+  // Stay in sync if the user re-taps a mood from Home while still on Explore.
+  useEffect(() => {
+    if (typeof params.q === "string") setQuery(params.q);
+  }, [params.q]);
 
   useEffect(() => {
     if (!query.trim()) {
@@ -93,7 +100,11 @@ function ExploreScreen() {
               <Text style={styles.section}>Browse moods</Text>
               <View style={styles.grid}>
                 {CATEGORIES.map((c) => (
-                  <Pressable key={c.name} style={styles.cat}>
+                  <Pressable
+                    key={c.name}
+                    onPress={() => setQuery(c.name)}
+                    style={styles.cat}
+                  >
                     <LinearGradient colors={c.grad} style={StyleSheet.absoluteFillObject} />
                     <Text style={styles.catName}>{c.name}</Text>
                     <Image source={{ uri: c.img }} style={styles.catImg} contentFit="cover" />

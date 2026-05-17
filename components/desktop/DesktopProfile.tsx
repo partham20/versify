@@ -6,22 +6,45 @@ import { Pressable, ScrollView, Text, View } from "react-native";
 import { useAuth } from "../../lib/auth";
 import type { PoemWithStats } from "../../lib/database.types";
 import { useNowPlaying } from "../../lib/nowPlaying";
-import { fetchPoemsByAuthor, fetchUserBookmarks, fetchUserLikes } from "../../lib/poems";
+import {
+  fetchFollowing,
+  fetchFollowStats,
+  type PublicUser,
+} from "../../lib/follows";
+import {
+  createPlaylist,
+  fetchUserPlaylists,
+  type PlaylistWithCount,
+} from "../../lib/playlists";
+import {
+  fetchLikedPoems,
+  fetchPoemsByAuthor,
+  fetchUserBookmarks,
+  fetchUserLikes,
+} from "../../lib/poems";
 import { shareProfile } from "../../lib/share";
 import { formatReadTime } from "../../lib/syllables";
 import { colors, fonts } from "../../theme";
 import { Icon } from "../Icon";
 
-type Tab = "poems" | "playlists" | "liked";
+type Tab = "poems" | "playlists" | "liked" | "following";
 
 export function DesktopProfile() {
   const router = useRouter();
   const { profile } = useAuth();
   const [tab, setTab] = useState<Tab>("poems");
   const [poems, setPoems] = useState<PoemWithStats[]>([]);
+  const [likedPoems, setLikedPoems] = useState<PoemWithStats[]>([]);
+  const [likedLoaded, setLikedLoaded] = useState(false);
   const [likedIds, setLikedIds] = useState<Set<string>>(new Set());
   const [bookmarkIds, setBookmarkIds] = useState<Set<string>>(new Set());
   const [shareLabel, setShareLabel] = useState("Share");
+  const [playlists, setPlaylists] = useState<PlaylistWithCount[]>([]);
+  const [playlistsLoaded, setPlaylistsLoaded] = useState(false);
+  const [creatingPlaylist, setCreatingPlaylist] = useState(false);
+  const [followStats, setFollowStats] = useState({ followers: 0, following: 0 });
+  const [followingUsers, setFollowingUsers] = useState<PublicUser[]>([]);
+  const [followingLoaded, setFollowingLoaded] = useState(false);
 
   async function onShare() {
     if (!profile) return;
@@ -43,7 +66,53 @@ export function DesktopProfile() {
     fetchPoemsByAuthor(profile.id).then(setPoems).catch(() => {});
     fetchUserLikes(profile.id).then(setLikedIds).catch(() => {});
     fetchUserBookmarks(profile.id).then(setBookmarkIds).catch(() => {});
+    fetchFollowStats(profile.id).then(setFollowStats).catch(() => {});
   }, [profile]);
+
+  useEffect(() => {
+    if (!profile || tab !== "following" || followingLoaded) return;
+    fetchFollowing(profile.id)
+      .then(setFollowingUsers)
+      .catch(() => setFollowingUsers([]))
+      .finally(() => setFollowingLoaded(true));
+  }, [profile, tab, followingLoaded]);
+
+  // Lazy-load the user's liked poems (their full rows, not just ids) when the
+  // tab is first opened. Re-fetch each time the tab is reopened so likes done
+  // elsewhere in the session show up.
+  useEffect(() => {
+    if (!profile || tab !== "liked") return;
+    fetchLikedPoems(profile.id)
+      .then(setLikedPoems)
+      .catch(() => setLikedPoems([]))
+      .finally(() => setLikedLoaded(true));
+  }, [profile, tab]);
+
+  // Lazy-load playlists when the tab is first opened.
+  useEffect(() => {
+    if (!profile || tab !== "playlists" || playlistsLoaded) return;
+    fetchUserPlaylists(profile.id)
+      .then(setPlaylists)
+      .catch(() => setPlaylists([]))
+      .finally(() => setPlaylistsLoaded(true));
+  }, [profile, tab, playlistsLoaded]);
+
+  async function onCreatePlaylist() {
+    if (!profile || creatingPlaylist) return;
+    setCreatingPlaylist(true);
+    try {
+      const created = await createPlaylist(
+        profile.id,
+        `My Playlist #${playlists.length + 1}`,
+      );
+      setPlaylists((prev) => [...prev, { ...created, poem_count: 0 }]);
+      router.push(`/playlist/${created.id}?edit=1` as never);
+    } catch {
+      // surface silently; user can retry
+    } finally {
+      setCreatingPlaylist(false);
+    }
+  }
 
   if (!profile) return null;
 
@@ -108,9 +177,11 @@ export function DesktopProfile() {
           <View style={styles.statsRow}>
             <Stat value={poems.length.toLocaleString()} label="POEMS" />
             <View style={styles.statDivider} />
-            <Stat value="0" label="FOLLOWERS" />
+            <Stat value={followStats.followers.toLocaleString()} label="FOLLOWERS" />
             <View style={styles.statDivider} />
-            <Stat value="0" label="FOLLOWING" />
+            <Pressable onPress={() => setTab("following")}>
+              <Stat value={followStats.following.toLocaleString()} label="FOLLOWING" />
+            </Pressable>
           </View>
 
           <View style={styles.actionsRow}>
@@ -150,7 +221,7 @@ export function DesktopProfile() {
       </View>
 
       <View style={styles.tabRow}>
-        {(["poems", "playlists", "liked"] as Tab[]).map((t) => {
+        {(["poems", "playlists", "liked", "following"] as Tab[]).map((t) => {
           const active = tab === t;
           return (
             <Pressable key={t} onPress={() => setTab(t)} style={styles.tabBtn}>
@@ -173,19 +244,117 @@ export function DesktopProfile() {
       )}
       {tab === "liked" && (
         <PoemGrid
-          poems={display.filter((p) => likedIds.has(p.id))}
-          empty="No liked poems yet."
+          poems={likedPoems}
+          empty={likedLoaded ? "No liked poems yet." : "Loading…"}
           onOpen={(id) => router.push(`/poem/${id}`)}
           likedIds={likedIds}
         />
       )}
       {tab === "playlists" && (
         <View style={styles.section}>
-          <View style={styles.empty}>
-            <Icon name="library_books" size={32} color={colors.onSurfaceVariant} />
-            <Text style={styles.emptyText}>Playlists coming soon.</Text>
-            <Text style={styles.emptySub}>Group poems by mood, season, or feeling.</Text>
+          <View style={styles.playlistsGrid}>
+            <Pressable
+              onPress={onCreatePlaylist}
+              disabled={creatingPlaylist}
+              style={[styles.createCard, creatingPlaylist && { opacity: 0.6 }]}
+            >
+              <View style={styles.createCover}>
+                <Icon name="add" size={36} color={colors.white} />
+              </View>
+              <Text style={styles.cardTitle} numberOfLines={1}>
+                {creatingPlaylist ? "Creating…" : "Create playlist"}
+              </Text>
+              <Text style={styles.cardSub} numberOfLines={1}>
+                A fresh place for poems you love
+              </Text>
+            </Pressable>
+
+            {playlistsLoaded &&
+              playlists.map((pl) => (
+                <Pressable
+                  key={pl.id}
+                  onPress={() => router.push(`/playlist/${pl.id}` as never)}
+                  style={styles.card}
+                >
+                  <View style={styles.cover}>
+                    {pl.cover_url ? (
+                      <Image
+                        source={{ uri: pl.cover_url }}
+                        style={{ width: "100%", height: "100%" }}
+                        contentFit="cover"
+                      />
+                    ) : (
+                      <View style={styles.coverEmpty}>
+                        <Icon
+                          name="library_books"
+                          size={28}
+                          color={colors.onSurfaceVariant}
+                        />
+                      </View>
+                    )}
+                  </View>
+                  <Text style={styles.cardTitle} numberOfLines={1}>
+                    {pl.name}
+                  </Text>
+                  <Text style={styles.cardSub} numberOfLines={1}>
+                    {pl.poem_count} {pl.poem_count === 1 ? "POEM" : "POEMS"}
+                  </Text>
+                </Pressable>
+              ))}
           </View>
+
+          {playlistsLoaded && playlists.length === 0 && (
+            <Text style={styles.playlistsHint}>
+              Tap “Create playlist” to start a new one.
+            </Text>
+          )}
+        </View>
+      )}
+
+      {tab === "following" && (
+        <View style={styles.section}>
+          {!followingLoaded ? (
+            <View style={styles.empty}>
+              <Text style={styles.emptyText}>Loading…</Text>
+            </View>
+          ) : followingUsers.length === 0 ? (
+            <View style={styles.empty}>
+              <Icon name="person_add" size={32} color={colors.onSurfaceVariant} />
+              <Text style={styles.emptyText}>You aren&apos;t following anyone yet.</Text>
+              <Text style={styles.emptySub}>
+                Tap a poet&apos;s name on any poem to visit their profile.
+              </Text>
+            </View>
+          ) : (
+            <View style={styles.followingGrid}>
+              {followingUsers.map((u) => (
+                <Pressable
+                  key={u.id}
+                  onPress={() => router.push(`/u/${u.handle}` as never)}
+                  style={styles.followCard}
+                >
+                  <View style={styles.followAvatar}>
+                    {u.avatar_url ? (
+                      <Image
+                        source={{ uri: u.avatar_url }}
+                        style={{ width: "100%", height: "100%" }}
+                        contentFit="cover"
+                      />
+                    ) : (
+                      <Icon name="auto_stories" size={28} color={colors.onSurfaceVariant} />
+                    )}
+                  </View>
+                  <Text style={styles.cardTitle} numberOfLines={1}>
+                    {u.display_name}
+                  </Text>
+                  <Text style={styles.cardSub} numberOfLines={1}>
+                    @{u.handle}
+                    {u.verified ? " · Verified" : ""}
+                  </Text>
+                </Pressable>
+              ))}
+            </View>
+          )}
         </View>
       )}
     </ScrollView>
@@ -493,4 +662,55 @@ const styles = {
   },
   emptyText: { fontFamily: fonts.headlineRegular, fontSize: 16, color: colors.white },
   emptySub: { fontFamily: fonts.body, fontSize: 12, color: colors.onSurfaceVariant },
+
+  playlistsGrid: {
+    flexDirection: "row" as const,
+    flexWrap: "wrap" as const,
+    gap: 18,
+  },
+  createCard: {
+    width: 220,
+    padding: 16,
+    borderRadius: 16,
+    backgroundColor: colors.surfaceLow,
+    borderWidth: 1,
+    borderColor: colors.hairline,
+  },
+  createCover: {
+    aspectRatio: 1,
+    borderRadius: 10,
+    marginBottom: 14,
+    backgroundColor: colors.surfaceHigh,
+    alignItems: "center" as const,
+    justifyContent: "center" as const,
+  },
+  playlistsHint: {
+    marginTop: 20,
+    fontFamily: fonts.body,
+    fontSize: 12,
+    color: colors.onSurfaceVariant,
+  },
+
+  followingGrid: {
+    flexDirection: "row" as const,
+    flexWrap: "wrap" as const,
+    gap: 18,
+  },
+  followCard: {
+    width: 200,
+    padding: 16,
+    borderRadius: 16,
+    backgroundColor: colors.surfaceLow,
+    alignItems: "center" as const,
+  },
+  followAvatar: {
+    width: 120,
+    height: 120,
+    borderRadius: 60,
+    overflow: "hidden" as const,
+    backgroundColor: colors.surfaceHigh,
+    alignItems: "center" as const,
+    justifyContent: "center" as const,
+    marginBottom: 14,
+  },
 };

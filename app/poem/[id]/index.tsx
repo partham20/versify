@@ -305,7 +305,12 @@ function MobileReader() {
             {tailWords && <Text style={styles.titleItalic}>{tailWords}</Text>}
           </Text>
 
-          <View style={styles.authorRow}>
+          <Pressable
+            onPress={() =>
+              poem.author_handle && router.push(`/u/${poem.author_handle}` as never)
+            }
+            style={styles.authorRow}
+          >
             {poem.author_avatar && (
               <Image source={{ uri: poem.author_avatar }} style={styles.authorAvatar} contentFit="cover" />
             )}
@@ -315,7 +320,7 @@ function MobileReader() {
                 PUBLISHED {poem.published_at ? new Date(poem.published_at).toLocaleDateString(undefined, { month: "short", day: "numeric" }).toUpperCase() : "—"}
               </Text>
             </View>
-          </View>
+          </Pressable>
 
           <View style={styles.article}>
             {poem.body.map((stanza, i) =>

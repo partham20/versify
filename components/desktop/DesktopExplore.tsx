@@ -1,6 +1,6 @@
 import { Image } from "expo-image";
 import { LinearGradient } from "expo-linear-gradient";
-import { useRouter } from "expo-router";
+import { useLocalSearchParams, useRouter } from "expo-router";
 import { useEffect, useState } from "react";
 import { Pressable, ScrollView, Text, TextInput, View } from "react-native";
 import type { PoemWithStats } from "../../lib/database.types";
@@ -29,7 +29,9 @@ const CHIPS = ["All", "Trending", "Haiku", "Sonnet", "Free verse", "Spoken word"
 
 export function DesktopExplore() {
   const router = useRouter();
-  const [query, setQuery] = useState("");
+  const params = useLocalSearchParams<{ q?: string }>();
+  const initialQuery = typeof params.q === "string" ? params.q : "";
+  const [query, setQuery] = useState(initialQuery);
   const [filter, setFilter] = useState("All");
   const [results, setResults] = useState<PoemWithStats[]>([]);
   const [trending, setTrending] = useState<PoemWithStats[]>([]);
@@ -37,6 +39,12 @@ export function DesktopExplore() {
   useEffect(() => {
     fetchFeed(20).then(setTrending).catch(() => {});
   }, []);
+
+  // When `?q=` changes (e.g. tapping a mood on Home while already on Explore),
+  // sync the search input so results update.
+  useEffect(() => {
+    if (typeof params.q === "string") setQuery(params.q);
+  }, [params.q]);
 
   useEffect(() => {
     const q = query.trim();

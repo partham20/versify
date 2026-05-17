@@ -12,15 +12,20 @@ import { useAuth } from "../../lib/auth";
 import { useIsDesktop } from "../../lib/breakpoints";
 import type { PoemWithStats } from "../../lib/database.types";
 import {
+  fetchFollowing,
+  fetchFollowStats,
+  type PublicUser,
+} from "../../lib/follows";
+import {
   createPlaylist,
   fetchUserPlaylists,
   type PlaylistWithCount,
 } from "../../lib/playlists";
-import { fetchPoemsByAuthor } from "../../lib/poems";
+import { fetchLikedPoems, fetchPoemsByAuthor } from "../../lib/poems";
 import { shareProfile } from "../../lib/share";
 import { colors, fonts, radius } from "../../theme";
 
-type Tab = "poems" | "playlists" | "liked";
+type Tab = "poems" | "playlists" | "liked" | "following";
 
 export default function Profile() {
   const isDesktop = useIsDesktop();
@@ -38,6 +43,10 @@ function ProfileScreen() {
   const [playlists, setPlaylists] = useState<PlaylistWithCount[]>([]);
   const [playlistsLoaded, setPlaylistsLoaded] = useState(false);
   const [creatingPlaylist, setCreatingPlaylist] = useState(false);
+  const [likedPoems, setLikedPoems] = useState<PoemWithStats[]>([]);
+  const [likedLoaded, setLikedLoaded] = useState(false);
+  const [followingUsers, setFollowingUsers] = useState<PublicUser[]>([]);
+  const [followingLoaded, setFollowingLoaded] = useState(false);
 
   async function onShare() {
     if (!profile) return;
@@ -61,7 +70,20 @@ function ProfileScreen() {
       setPoems(list);
       setStats((s) => ({ ...s, poems: list.length }));
     })();
+    fetchFollowStats(profile.id)
+      .then(({ followers, following }) =>
+        setStats((s) => ({ ...s, followers, following })),
+      )
+      .catch(() => {});
   }, [profile]);
+
+  useEffect(() => {
+    if (!profile || tab !== "following") return;
+    fetchFollowing(profile.id)
+      .then(setFollowingUsers)
+      .catch(() => setFollowingUsers([]))
+      .finally(() => setFollowingLoaded(true));
+  }, [profile, tab]);
 
   // Lazy-load playlists when the tab is first opened.
   useEffect(() => {
@@ -71,6 +93,16 @@ function ProfileScreen() {
       .catch(() => setPlaylists([]))
       .finally(() => setPlaylistsLoaded(true));
   }, [profile, tab, playlistsLoaded]);
+
+  // Lazy-load liked poems. Re-fetch each time the tab is reopened so likes
+  // toggled elsewhere in the session show up.
+  useEffect(() => {
+    if (!profile || tab !== "liked") return;
+    fetchLikedPoems(profile.id)
+      .then(setLikedPoems)
+      .catch(() => setLikedPoems([]))
+      .finally(() => setLikedLoaded(true));
+  }, [profile, tab]);
 
   async function onCreatePlaylist() {
     if (!profile || creatingPlaylist) return;
@@ -143,10 +175,14 @@ function ProfileScreen() {
               [stats.followers.toString(), "FOLLOWERS"],
               [stats.following.toString(), "FOLLOWING"],
             ].map(([v, l], i) => (
-              <View key={l}>
+              <Pressable
+                key={l}
+                onPress={() => l === "FOLLOWING" && setTab("following")}
+                disabled={l !== "FOLLOWING"}
+              >
                 <Text style={[styles.statValue, i === 0 && { color: colors.primary }]}>{v}</Text>
                 <Text style={styles.statLabel}>{l}</Text>
-              </View>
+              </Pressable>
             ))}
           </View>
 
@@ -161,7 +197,7 @@ function ProfileScreen() {
         </View>
 
         <View style={styles.tabsRow}>
-          {(["poems", "playlists", "liked"] as Tab[]).map((t) => (
+          {(["poems", "playlists", "liked", "following"] as Tab[]).map((t) => (
             <Pressable key={t} onPress={() => setTab(t)} style={styles.tabBtn}>
               <Text style={[styles.tabLabel, tab === t && { color: colors.white }]}>
                 {t.toUpperCase()}
@@ -259,8 +295,90 @@ function ProfileScreen() {
           </View>
         )}
         {tab === "liked" && (
-          <View style={{ padding: 20 }}>
-            <Text style={styles.empty}>Your liked poems will appear here.</Text>
+          <View style={{ padding: 20, gap: 12 }}>
+            {!likedLoaded ? (
+              <Text style={styles.empty}>Loading…</Text>
+            ) : likedPoems.length === 0 ? (
+              <Text style={styles.empty}>No liked poems yet.</Text>
+            ) : (
+              likedPoems.map((p) => (
+                <Pressable
+                  key={p.id}
+                  onPress={() => router.push(`/poem/${p.id}`)}
+                  style={styles.poemTile}
+                >
+                  <Text style={styles.poemTitle}>{p.title}</Text>
+                  <Text style={styles.poemExcerpt} numberOfLines={3}>
+                    {p.body[0]?.replace(/\n/g, " ") ?? ""}
+                  </Text>
+                  <View style={styles.likedMetaRow}>
+                    <Text style={styles.likedAuthor} numberOfLines={1}>
+                      {p.author_name}
+                    </Text>
+                    <View style={{ flexDirection: "row", alignItems: "center", gap: 4 }}>
+                      <Icon name="favorite" size={12} color={colors.primary} />
+                      <Text style={styles.likedCount}>
+                        {p.like_count.toLocaleString()}
+                      </Text>
+                    </View>
+                  </View>
+                </Pressable>
+              ))
+            )}
+          </View>
+        )}
+
+        {tab === "following" && (
+          <View style={{ padding: 20, gap: 10 }}>
+            {!followingLoaded ? (
+              <Text style={styles.empty}>Loading…</Text>
+            ) : followingUsers.length === 0 ? (
+              <Text style={styles.empty}>
+                You aren&apos;t following anyone yet.
+              </Text>
+            ) : (
+              followingUsers.map((u) => (
+                <Pressable
+                  key={u.id}
+                  onPress={() => router.push(`/u/${u.handle}` as never)}
+                  style={styles.followRow}
+                >
+                  <View style={styles.followRowAvatar}>
+                    {u.avatar_url ? (
+                      <Image
+                        source={{ uri: u.avatar_url }}
+                        style={{ width: "100%", height: "100%" }}
+                        contentFit="cover"
+                      />
+                    ) : (
+                      <Icon
+                        name="auto_stories"
+                        size={20}
+                        color={colors.onSurfaceVariant}
+                      />
+                    )}
+                  </View>
+                  <View style={{ flex: 1, minWidth: 0 }}>
+                    <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+                      <Text style={styles.followRowName} numberOfLines={1}>
+                        {u.display_name}
+                      </Text>
+                      {u.verified && (
+                        <Icon name="verified" size={12} color={colors.primary} />
+                      )}
+                    </View>
+                    <Text style={styles.followRowHandle} numberOfLines={1}>
+                      @{u.handle}
+                    </Text>
+                  </View>
+                  <Icon
+                    name="arrow_forward_ios"
+                    size={14}
+                    color={colors.onSurfaceVariant}
+                  />
+                </Pressable>
+              ))
+            )}
           </View>
         )}
       </ScrollView>
@@ -360,6 +478,49 @@ const styles = StyleSheet.create({
   },
   playlistName: { fontFamily: fonts.bodySemiBold, fontSize: 14, color: colors.white },
   playlistMeta: {
+    fontFamily: fonts.body,
+    fontSize: 11,
+    color: colors.onSurfaceVariant,
+    marginTop: 2,
+  },
+
+  likedMetaRow: {
+    marginTop: 10,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+  },
+  likedAuthor: {
+    fontFamily: fonts.bodyBold,
+    fontSize: 11,
+    color: colors.onSurfaceVariant,
+    letterSpacing: 0.4,
+  },
+  likedCount: {
+    fontFamily: fonts.body,
+    fontSize: 11,
+    color: colors.onSurfaceVariant,
+  },
+
+  followRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 14,
+    padding: 12,
+    borderRadius: radius.md,
+    backgroundColor: colors.surfaceLow,
+  },
+  followRowAvatar: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    backgroundColor: colors.surfaceHigh,
+    alignItems: "center",
+    justifyContent: "center",
+    overflow: "hidden",
+  },
+  followRowName: { fontFamily: fonts.bodySemiBold, fontSize: 14, color: colors.white },
+  followRowHandle: {
     fontFamily: fonts.body,
     fontSize: 11,
     color: colors.onSurfaceVariant,
