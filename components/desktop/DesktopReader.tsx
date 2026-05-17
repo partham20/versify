@@ -17,6 +17,7 @@ import {
   toggleLike as toggleLikeRemote,
 } from "../../lib/poems";
 import { formatReadTime } from "../../lib/syllables";
+import { followUser, isFollowing as checkIsFollowing, unfollowUser } from "../../lib/follows";
 import { colors, fonts } from "../../theme";
 import { AddToPlaylistModal } from "../AddToPlaylistModal";
 import { Icon } from "../Icon";
@@ -41,6 +42,8 @@ export function DesktopReader({ poem }: { poem: PoemWithStats }) {
   const [similar, setSimilar] = useState<PoemWithStats[]>([]);
   const [deleting, setDeleting] = useState(false);
   const [addToPlaylistOpen, setAddToPlaylistOpen] = useState(false);
+  const [followingAuthor, setFollowingAuthor] = useState(false);
+  const [followBusy, setFollowBusy] = useState(false);
 
   const isAuthor = user?.id === poem.author_id;
 
@@ -94,6 +97,35 @@ export function DesktopReader({ poem }: { poem: PoemWithStats }) {
       .then((r) => setSimilar(r.filter((x) => x.id !== poem.id).slice(0, 5)))
       .catch(() => {});
   }, [poem.id]);
+
+  useEffect(() => {
+    if (!user || user.id === poem.author_id) {
+      setFollowingAuthor(false);
+      return;
+    }
+    checkIsFollowing(user.id, poem.author_id)
+      .then(setFollowingAuthor)
+      .catch(() => setFollowingAuthor(false));
+  }, [user, poem.author_id]);
+
+  async function onToggleFollow() {
+    if (!user || user.id === poem.author_id || followBusy) return;
+    const was = followingAuthor;
+    setFollowingAuthor(!was);
+    setFollowBusy(true);
+    try {
+      if (was) await unfollowUser(user.id, poem.author_id);
+      else await followUser(user.id, poem.author_id);
+    } catch {
+      setFollowingAuthor(was);
+    } finally {
+      setFollowBusy(false);
+    }
+  }
+
+  function goToAuthor() {
+    if (poem.author_handle) router.push(`/u/${poem.author_handle}` as never);
+  }
 
   async function onLike() {
     if (!user) return;
@@ -202,19 +234,40 @@ export function DesktopReader({ poem }: { poem: PoemWithStats }) {
       <View style={styles.bodyGrid}>
         <View style={styles.leftRail}>
           <View style={styles.authorRow}>
-            {poem.author_avatar && (
-              <Image
-                source={{ uri: poem.author_avatar }}
-                style={styles.authorAvatar}
-                contentFit="cover"
-              />
-            )}
+            <Pressable onPress={goToAuthor}>
+              {poem.author_avatar && (
+                <Image
+                  source={{ uri: poem.author_avatar }}
+                  style={styles.authorAvatar}
+                  contentFit="cover"
+                />
+              )}
+            </Pressable>
             <View>
-              <Text style={styles.authorName}>{poem.author_name}</Text>
-              <Text style={styles.authorHandle}>@{poem.author_handle}</Text>
-              <Pressable style={styles.followBtn}>
-                <Text style={styles.followBtnText}>Follow</Text>
+              <Pressable onPress={goToAuthor}>
+                <Text style={styles.authorName}>{poem.author_name}</Text>
+                <Text style={styles.authorHandle}>@{poem.author_handle}</Text>
               </Pressable>
+              {!!user && user.id !== poem.author_id && (
+                <Pressable
+                  onPress={onToggleFollow}
+                  disabled={followBusy}
+                  style={[
+                    styles.followBtn,
+                    followingAuthor && styles.followBtnFollowing,
+                    followBusy && { opacity: 0.6 },
+                  ]}
+                >
+                  <Text
+                    style={[
+                      styles.followBtnText,
+                      followingAuthor && styles.followBtnTextFollowing,
+                    ]}
+                  >
+                    {followingAuthor ? "Following" : "Follow"}
+                  </Text>
+                </Pressable>
+              )}
             </View>
           </View>
 
@@ -492,11 +545,17 @@ const styles = {
     backgroundColor: colors.primary,
     alignSelf: "flex-start" as const,
   },
+  followBtnFollowing: {
+    backgroundColor: "rgba(255,255,255,0.06)",
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.18)",
+  },
   followBtnText: {
     color: colors.onPrimary,
     fontFamily: fonts.bodyBold,
     fontSize: 11,
   },
+  followBtnTextFollowing: { color: colors.white },
   aboutCard: {
     padding: 18,
     borderRadius: 16,

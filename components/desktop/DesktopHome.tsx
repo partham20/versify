@@ -269,7 +269,9 @@ export function DesktopHome() {
               {CATEGORIES.map((c) => (
                 <Pressable
                   key={c.name}
-                  onPress={() => router.push("/(tabs)/explore")}
+                  onPress={() =>
+                    router.push(`/(tabs)/explore?q=${encodeURIComponent(c.name)}` as never)
+                  }
                   style={styles.moodCard}
                 >
                   <LinearGradient

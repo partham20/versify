@@ -108,6 +108,21 @@ export async function fetchUserLikes(userId: string): Promise<Set<string>> {
   return new Set((data ?? []).map((r) => r.poem_id));
 }
 
+// Full poem rows for every poem the user has liked, newest-liked first.
+// RLS on the poems_with_stats view silently drops poems whose visibility no
+// longer permits a read (e.g. flipped to draft after being liked).
+export async function fetchLikedPoems(userId: string): Promise<PoemWithStats[]> {
+  const { data, error } = await supabase
+    .from("likes")
+    .select("created_at, poem:poems_with_stats(*)")
+    .eq("user_id", userId)
+    .order("created_at", { ascending: false });
+  if (error) throw error;
+  return ((data ?? []) as Array<{ poem: PoemWithStats | null }>)
+    .map((r) => r.poem)
+    .filter((p): p is PoemWithStats => p !== null);
+}
+
 export async function fetchUserBookmarks(userId: string): Promise<Set<string>> {
   const { data, error } = await supabase
     .from("bookmarks")

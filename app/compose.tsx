@@ -27,7 +27,7 @@ import {
 } from "../lib/audio";
 import { useAuth } from "../lib/auth";
 import { useIsDesktop } from "../lib/breakpoints";
-import { COVER_MAX_BYTES, pickNativeCover, uploadCover } from "../lib/covers";
+import { ACCEPT_MIMES, COVER_MAX_BYTES, pickNativeCover, uploadCover } from "../lib/covers";
 import { publishPoem } from "../lib/poems";
 import { countSyllables } from "../lib/syllables";
 import { colors, fonts, radius } from "../theme";
@@ -69,6 +69,11 @@ function MobileCompose() {
   const [audioUrl, setAudioUrl] = useState<string | null>(null);
   const [uploadingAudio, setUploadingAudio] = useState(false);
   const [audioError, setAudioError] = useState<string | null>(null);
+  // Hidden <input type="file"> refs used on web when this mobile layout is
+  // rendered in a narrow browser window (under DESKTOP_MIN_WIDTH). On native
+  // they're never read because we go through expo-image-picker / expo-av.
+  const coverFileInput = useRef<HTMLInputElement | null>(null);
+  const audioFileInput = useRef<HTMLInputElement | null>(null);
   const [visibility, setVisibility] = useState<Visibility>("public");
   const [tags, setTags] = useState<string[]>(["Solitude"]);
   const [submitting, setSubmitting] = useState(false);
@@ -109,6 +114,13 @@ function MobileCompose() {
       setCoverError("Sign in to upload a cover.");
       return;
     }
+    // On web (mobile layout rendered in a narrow browser window) the OS image
+    // picker isn't available, so trigger the hidden <input type="file"> and
+    // let handleCoverFile() take over once a file is chosen.
+    if (Platform.OS === "web") {
+      coverFileInput.current?.click();
+      return;
+    }
     setUploadingCover(true);
     try {
       const blob = await pickNativeCover();
@@ -124,6 +136,66 @@ function MobileCompose() {
       setCoverError((e as Error).message);
     } finally {
       setUploadingCover(false);
+    }
+  }
+
+  async function handleCoverFile(ev: React.ChangeEvent<HTMLInputElement>) {
+    const file = ev.target.files?.[0];
+    ev.target.value = "";
+    if (!file) return;
+    if (!user) {
+      setCoverError("Sign in to upload a cover.");
+      return;
+    }
+    if (!file.type.startsWith("image/")) {
+      setCoverError("That doesn't look like an image. Try JPG, PNG, WEBP, or GIF.");
+      return;
+    }
+    if (file.size > COVER_MAX_BYTES) {
+      setCoverError("Image is over 10 MB. Pick something smaller.");
+      return;
+    }
+    setUploadingCover(true);
+    try {
+      const url = await uploadCover(user.id, file, file.type);
+      setCoverUrl(url);
+      setIsCustomCover(true);
+    } catch (e) {
+      setCoverError(`Upload failed: ${(e as Error).message}`);
+    } finally {
+      setUploadingCover(false);
+    }
+  }
+
+  function pickAudioFile() {
+    setAudioError(null);
+    audioFileInput.current?.click();
+  }
+
+  async function handleAudioFile(ev: React.ChangeEvent<HTMLInputElement>) {
+    const file = ev.target.files?.[0];
+    ev.target.value = "";
+    if (!file) return;
+    if (!user) {
+      setAudioError("Sign in to upload narration.");
+      return;
+    }
+    if (!file.type.startsWith("audio/")) {
+      setAudioError("That doesn't look like an audio file. Try MP3, M4A, WAV, OGG, or WebM.");
+      return;
+    }
+    if (file.size > 25 * 1024 * 1024) {
+      setAudioError("Audio file is over 25 MB. Pick something smaller or trim it.");
+      return;
+    }
+    setUploadingAudio(true);
+    try {
+      const url = await uploadAudio(user.id, file);
+      setAudioUrl(url);
+    } catch (e) {
+      setAudioError(`Upload failed: ${(e as Error).message}`);
+    } finally {
+      setUploadingAudio(false);
     }
   }
 
@@ -495,7 +567,37 @@ function MobileCompose() {
               {audioError}
             </Text>
           )}
+          {/* Web only: an alternative to recording — upload a finished file. */}
+          {Platform.OS === "web" && !recording && !uploadingAudio && (
+            <Pressable onPress={pickAudioFile} style={styles.uploadAudioBtn}>
+              <Icon name="add_circle" size={14} color={colors.white} />
+              <Text style={styles.uploadAudioText}>
+                {audioUrl ? "REPLACE WITH FILE" : "OR UPLOAD AUDIO FILE"}
+              </Text>
+            </Pressable>
+          )}
         </View>
+      )}
+
+      {/* Hidden file inputs — only meaningful on web. react-native-web preserves
+          these as real DOM elements. On native they're inert. */}
+      {Platform.OS === "web" && (
+        <>
+          <input
+            ref={coverFileInput}
+            type="file"
+            accept={ACCEPT_MIMES}
+            onChange={handleCoverFile}
+            style={{ display: "none" }}
+          />
+          <input
+            ref={audioFileInput}
+            type="file"
+            accept="audio/*"
+            onChange={handleAudioFile}
+            style={{ display: "none" }}
+          />
+        </>
       )}
     </View>
   );
@@ -666,5 +768,21 @@ const styles = StyleSheet.create({
     justifyContent: "center",
   },
   recText: { fontFamily: fonts.bodyBold, fontSize: 11, color: colors.error, letterSpacing: 1.8, marginTop: 8 },
+  uploadAudioBtn: {
+    marginTop: 8,
+    paddingVertical: 6,
+    paddingHorizontal: 12,
+    borderRadius: 999,
+    backgroundColor: "rgba(255,255,255,0.06)",
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+  },
+  uploadAudioText: {
+    color: colors.white,
+    fontFamily: fonts.bodyBold,
+    fontSize: 10,
+    letterSpacing: 1.4,
+  },
   error: { color: colors.error, fontFamily: fonts.body, fontSize: 13, marginTop: 16 },
 });
