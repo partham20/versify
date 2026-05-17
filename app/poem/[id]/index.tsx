@@ -14,6 +14,7 @@ import {
 } from "react-native";
 import { Audio, type AVPlaybackStatus } from "expo-av";
 import * as Haptics from "expo-haptics";
+import { AddToPlaylistModal } from "../../../components/AddToPlaylistModal";
 import { DesktopReader } from "../../../components/desktop/DesktopReader";
 import { DesktopShell } from "../../../components/desktop/DesktopShell";
 import { Glass } from "../../../components/Glass";
@@ -76,6 +77,7 @@ function MobileReader() {
   const [audioError, setAudioError] = useState<string | null>(null);
   const soundRef = useRef<Audio.Sound | null>(null);
   const [deleting, setDeleting] = useState(false);
+  const [addToPlaylistOpen, setAddToPlaylistOpen] = useState(false);
 
   const isAuthor = !!user && !!poem && user.id === poem.author_id;
 
@@ -282,8 +284,12 @@ function MobileReader() {
               </Pressable>
             </View>
           ) : (
-            <Pressable style={styles.navBtn}>
-              <Icon name="more_horiz" size={20} color={colors.white} />
+            <Pressable
+              onPress={() => setAddToPlaylistOpen(true)}
+              style={styles.navBtn}
+              accessibilityLabel="Add to playlist"
+            >
+              <Icon name="playlist_add" size={20} color={colors.white} />
             </Pressable>
           )}
         </View>
@@ -361,9 +367,9 @@ function MobileReader() {
                 <Icon name="chat_bubble" size={22} color={colors.white} />
                 <Text style={styles.actionLabel}>{poem.comment_count}</Text>
               </Pressable>
-              <Pressable style={styles.action}>
-                <Icon name="ios_share" size={22} color={colors.white} />
-                <Text style={styles.actionLabel}>SEND</Text>
+              <Pressable onPress={() => setAddToPlaylistOpen(true)} style={styles.action}>
+                <Icon name="playlist_add" size={22} color={colors.white} />
+                <Text style={styles.actionLabel}>ADD TO</Text>
               </Pressable>
             </View>
             <Pressable
@@ -428,6 +434,12 @@ function MobileReader() {
           </Glass>
         </View>
       )}
+
+      <AddToPlaylistModal
+        visible={addToPlaylistOpen}
+        poemId={poem.id}
+        onClose={() => setAddToPlaylistOpen(false)}
+      />
     </View>
   );
 }

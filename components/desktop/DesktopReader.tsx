@@ -18,6 +18,7 @@ import {
 } from "../../lib/poems";
 import { formatReadTime } from "../../lib/syllables";
 import { colors, fonts } from "../../theme";
+import { AddToPlaylistModal } from "../AddToPlaylistModal";
 import { Icon } from "../Icon";
 import { LineReveal } from "../LineReveal";
 import { Particles } from "../Particles";
@@ -39,6 +40,7 @@ export function DesktopReader({ poem }: { poem: PoemWithStats }) {
   const [draft, setDraft] = useState("");
   const [similar, setSimilar] = useState<PoemWithStats[]>([]);
   const [deleting, setDeleting] = useState(false);
+  const [addToPlaylistOpen, setAddToPlaylistOpen] = useState(false);
 
   const isAuthor = user?.id === poem.author_id;
 
@@ -131,6 +133,7 @@ export function DesktopReader({ poem }: { poem: PoemWithStats }) {
   const restWords = titleWords.slice(1).join(" ");
 
   return (
+    <>
     <ScrollView style={styles.flex} contentContainerStyle={{ paddingBottom: 40 }}>
       <View style={styles.hero}>
         {poem.cover_url && (
@@ -241,7 +244,11 @@ export function DesktopReader({ poem }: { poem: PoemWithStats }) {
               />
               <Text style={styles.ghostBtnText}>{liked ? "Liked" : "Like"}</Text>
             </Pressable>
-            <Pressable style={styles.ghostBtn}>
+            <Pressable
+              onPress={() => setAddToPlaylistOpen(true)}
+              disabled={!user}
+              style={[styles.ghostBtn, !user && { opacity: 0.5 }]}
+            >
               <Icon name="add_circle" size={16} color={colors.white} />
               <Text style={styles.ghostBtnText}>Add to</Text>
             </Pressable>
@@ -385,6 +392,12 @@ export function DesktopReader({ poem }: { poem: PoemWithStats }) {
         </View>
       </View>
     </ScrollView>
+    <AddToPlaylistModal
+      visible={addToPlaylistOpen}
+      poemId={poem.id}
+      onClose={() => setAddToPlaylistOpen(false)}
+    />
+    </>
   );
 }
 
