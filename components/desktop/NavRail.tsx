@@ -4,7 +4,11 @@ import { useRouter, useSegments } from "expo-router";
 import { useEffect, useState } from "react";
 import { Pressable, ScrollView, Text, View } from "react-native";
 import { useAuth } from "../../lib/auth";
-import { fetchUserPlaylists, type PlaylistWithCount } from "../../lib/playlists";
+import {
+  createPlaylist,
+  fetchUserPlaylists,
+  type PlaylistWithCount,
+} from "../../lib/playlists";
 import { colors, fonts } from "../../theme";
 import { Icon, type IconName } from "../Icon";
 import { Logo } from "../Logo";
@@ -21,6 +25,7 @@ export function NavRail() {
   const segments = useSegments();
   const { profile } = useAuth();
   const [playlists, setPlaylists] = useState<PlaylistWithCount[]>([]);
+  const [creating, setCreating] = useState(false);
 
   useEffect(() => {
     if (!profile) {
@@ -29,6 +34,25 @@ export function NavRail() {
     }
     fetchUserPlaylists(profile.id).then(setPlaylists).catch(() => setPlaylists([]));
   }, [profile]);
+
+  const handleCreatePlaylist = async () => {
+    if (!profile || creating) return;
+    setCreating(true);
+    try {
+      const created = await createPlaylist(
+        profile.id,
+        `My Playlist #${playlists.length + 1}`,
+      );
+      setPlaylists((prev) => [...prev, { ...created, poem_count: 0 }]);
+      router.push(`/playlist/${created.id}?edit=1` as never);
+    } catch (e) {
+      if (typeof window !== "undefined" && typeof window.alert === "function") {
+        window.alert(`Could not create playlist: ${(e as Error).message}`);
+      }
+    } finally {
+      setCreating(false);
+    }
+  };
 
   const inTabs = segments[0] === "(tabs)";
   const tabName = inTabs ? (segments[1] ?? "index") : "index";
@@ -73,7 +97,12 @@ export function NavRail() {
 
       <View style={styles.plHeader}>
         <Text style={styles.plHeaderText}>YOUR PLAYLISTS</Text>
-        <Pressable>
+        <Pressable
+          onPress={handleCreatePlaylist}
+          disabled={!profile || creating}
+          accessibilityLabel="Create new playlist"
+          hitSlop={8}
+        >
           <Icon name="add_circle" size={16} color={colors.onSurfaceVariant} />
         </Pressable>
       </View>

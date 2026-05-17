@@ -1,24 +1,35 @@
 import { Image } from "expo-image";
 import { LinearGradient } from "expo-linear-gradient";
 import { useLocalSearchParams, useRouter } from "expo-router";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Pressable,
   ScrollView,
   StyleSheet,
   Text,
+  TextInput,
   View,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { ConfirmDialog } from "../../components/ConfirmDialog";
 import { DesktopShell } from "../../components/desktop/DesktopShell";
 import { Icon } from "../../components/Icon";
+import { useAuth } from "../../lib/auth";
 import { useIsDesktop } from "../../lib/breakpoints";
 import type { PlaylistRow, PoemWithStats } from "../../lib/database.types";
 import { useNowPlaying } from "../../lib/nowPlaying";
-import { fetchPlaylist, fetchPlaylistPoems } from "../../lib/playlists";
+import {
+  deletePlaylist,
+  fetchPlaylist,
+  fetchPlaylistPoems,
+  removePoemFromPlaylist,
+  renamePlaylist,
+} from "../../lib/playlists";
 import { formatReadTime } from "../../lib/syllables";
 import { colors, fonts } from "../../theme";
+
+const NO_OUTLINE = { outlineStyle: "none" } as unknown as never;
 
 export default function PlaylistRoute() {
   const isDesktop = useIsDesktop();
@@ -34,14 +45,23 @@ export default function PlaylistRoute() {
 
 function PlaylistScreen() {
   const router = useRouter();
-  const { id } = useLocalSearchParams<{ id: string }>();
+  const { id, edit } = useLocalSearchParams<{ id: string; edit?: string }>();
   const isDesktop = useIsDesktop();
   const insets = useSafeAreaInsets();
   const play = useNowPlaying((s) => s.play);
+  const { user } = useAuth();
 
   const [playlist, setPlaylist] = useState<PlaylistRow | null>(null);
   const [poems, setPoems] = useState<PoemWithStats[]>([]);
   const [loading, setLoading] = useState(true);
+  const [editingName, setEditingName] = useState(false);
+  const [nameDraft, setNameDraft] = useState("");
+  const [savingName, setSavingName] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const [removing, setRemoving] = useState<string | null>(null);
+  const [confirmDeleteOpen, setConfirmDeleteOpen] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
+  const nameInputRef = useRef<TextInput>(null);
 
   useEffect(() => {
     if (!id) return;
@@ -50,9 +70,77 @@ function PlaylistScreen() {
       .then(([pl, ps]) => {
         setPlaylist(pl);
         setPoems(ps);
+        if (pl && edit === "1") {
+          setNameDraft(pl.name);
+          setEditingName(true);
+          setTimeout(() => nameInputRef.current?.focus(), 50);
+        }
       })
       .finally(() => setLoading(false));
-  }, [id]);
+  }, [id, edit]);
+
+  const isOwner = !!user && !!playlist && user.id === playlist.owner_id;
+
+  function startRename() {
+    if (!playlist || !isOwner) return;
+    setNameDraft(playlist.name);
+    setEditingName(true);
+    setTimeout(() => nameInputRef.current?.focus(), 50);
+  }
+
+  async function commitRename() {
+    if (!playlist) return;
+    const trimmed = nameDraft.trim();
+    if (!trimmed || trimmed === playlist.name) {
+      setEditingName(false);
+      return;
+    }
+    setSavingName(true);
+    try {
+      await renamePlaylist(playlist.id, trimmed);
+      setPlaylist({ ...playlist, name: trimmed.slice(0, 80) });
+    } catch {
+      // keep editing on failure so the user can retry
+    } finally {
+      setSavingName(false);
+      setEditingName(false);
+    }
+  }
+
+  function openDeleteConfirm() {
+    if (!playlist || !isOwner) return;
+    setDeleteError(null);
+    setConfirmDeleteOpen(true);
+  }
+
+  async function runDelete() {
+    if (!playlist) return;
+    setDeleting(true);
+    setDeleteError(null);
+    try {
+      await deletePlaylist(playlist.id);
+      setConfirmDeleteOpen(false);
+      router.replace("/(tabs)" as never);
+    } catch (e) {
+      setDeleteError((e as Error).message);
+    } finally {
+      setDeleting(false);
+    }
+  }
+
+  async function onRemovePoem(poemId: string) {
+    if (!playlist || removing) return;
+    setRemoving(poemId);
+    const prev = poems;
+    setPoems((cur) => cur.filter((p) => p.id !== poemId));
+    try {
+      await removePoemFromPlaylist(playlist.id, poemId);
+    } catch {
+      setPoems(prev);
+    } finally {
+      setRemoving(null);
+    }
+  }
 
   if (loading) {
     return (
@@ -73,6 +161,7 @@ function PlaylistScreen() {
   const totalMin = Math.max(1, Math.round(totalSeconds / 60));
 
   return (
+    <>
     <ScrollView
       style={styles.flex}
       contentContainerStyle={[
@@ -122,9 +211,30 @@ function PlaylistScreen() {
           )}
           <View style={{ flex: 1, gap: 8 }}>
             <Text style={styles.kicker}>PLAYLIST</Text>
-            <Text style={[styles.title, isDesktop && { fontSize: 64, lineHeight: 64 }]}>
-              {playlist.name}
-            </Text>
+            {editingName ? (
+              <TextInput
+                ref={nameInputRef}
+                value={nameDraft}
+                onChangeText={setNameDraft}
+                onBlur={commitRename}
+                onSubmitEditing={commitRename}
+                maxLength={80}
+                editable={!savingName}
+                style={[
+                  styles.title,
+                  styles.titleInput,
+                  isDesktop && { fontSize: 64, lineHeight: 64 },
+                ]}
+                placeholder="Playlist name"
+                placeholderTextColor={colors.onSurfaceVariant}
+              />
+            ) : (
+              <Pressable onPress={startRename} disabled={!isOwner}>
+                <Text style={[styles.title, isDesktop && { fontSize: 64, lineHeight: 64 }]}>
+                  {playlist.name}
+                </Text>
+              </Pressable>
+            )}
             <Text style={styles.meta}>
               {poems.length} {poems.length === 1 ? "poem" : "poems"} · {totalMin} min
             </Text>
@@ -144,6 +254,25 @@ function PlaylistScreen() {
               <Pressable style={styles.iconBtn}>
                 <Icon name="ios_share" size={16} color={colors.white} />
               </Pressable>
+              {isOwner && (
+                <>
+                  <Pressable
+                    onPress={startRename}
+                    style={styles.iconBtn}
+                    accessibilityLabel="Rename playlist"
+                  >
+                    <Icon name="edit" size={16} color={colors.white} />
+                  </Pressable>
+                  <Pressable
+                    onPress={openDeleteConfirm}
+                    disabled={deleting}
+                    style={[styles.iconBtn, deleting && { opacity: 0.5 }]}
+                    accessibilityLabel="Delete playlist"
+                  >
+                    <Icon name="delete" size={16} color={colors.error} />
+                  </Pressable>
+                </>
+              )}
             </View>
           </View>
         </View>
@@ -197,7 +326,25 @@ function PlaylistScreen() {
                   {formatReadTime(p.read_time_seconds)}
                 </Text>
                 <View style={{ width: 40, alignItems: "flex-end" }}>
-                  <Icon name="favorite" size={16} color={colors.onSurfaceVariant} />
+                  {isOwner ? (
+                    <Pressable
+                      onPress={(e) => {
+                        e.stopPropagation();
+                        void onRemovePoem(p.id);
+                      }}
+                      disabled={removing === p.id}
+                      hitSlop={8}
+                      accessibilityLabel="Remove from playlist"
+                    >
+                      {removing === p.id ? (
+                        <ActivityIndicator size="small" color={colors.onSurfaceVariant} />
+                      ) : (
+                        <Icon name="close" size={16} color={colors.onSurfaceVariant} />
+                      )}
+                    </Pressable>
+                  ) : (
+                    <Icon name="favorite" size={16} color={colors.onSurfaceVariant} />
+                  )}
                 </View>
               </Pressable>
             ))}
@@ -205,6 +352,25 @@ function PlaylistScreen() {
         )}
       </View>
     </ScrollView>
+    <ConfirmDialog
+      visible={confirmDeleteOpen}
+      title="Delete playlist?"
+      message={
+        deleteError
+          ? `Couldn't delete: ${deleteError}`
+          : `"${playlist.name}" will be removed from your library. The poems themselves will stay.`
+      }
+      confirmLabel="Delete"
+      destructive
+      busy={deleting}
+      onConfirm={runDelete}
+      onCancel={() => {
+        if (deleting) return;
+        setConfirmDeleteOpen(false);
+        setDeleteError(null);
+      }}
+    />
+    </>
   );
 }
 
@@ -272,6 +438,13 @@ const styles = StyleSheet.create({
     lineHeight: 38,
     color: colors.white,
     letterSpacing: -1,
+  },
+  titleInput: {
+    backgroundColor: "rgba(255,255,255,0.06)",
+    borderRadius: 8,
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    ...(NO_OUTLINE as object),
   },
   meta: { fontFamily: fonts.body, fontSize: 13, color: colors.onSurfaceVariant },
 

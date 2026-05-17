@@ -11,6 +11,11 @@ import { TopBar } from "../../components/TopBar";
 import { useAuth } from "../../lib/auth";
 import { useIsDesktop } from "../../lib/breakpoints";
 import type { PoemWithStats } from "../../lib/database.types";
+import {
+  createPlaylist,
+  fetchUserPlaylists,
+  type PlaylistWithCount,
+} from "../../lib/playlists";
 import { fetchPoemsByAuthor } from "../../lib/poems";
 import { shareProfile } from "../../lib/share";
 import { colors, fonts, radius } from "../../theme";
@@ -30,6 +35,9 @@ function ProfileScreen() {
   const [poems, setPoems] = useState<PoemWithStats[]>([]);
   const [stats, setStats] = useState({ poems: 0, followers: 0, following: 0 });
   const [shareLabel, setShareLabel] = useState("Share");
+  const [playlists, setPlaylists] = useState<PlaylistWithCount[]>([]);
+  const [playlistsLoaded, setPlaylistsLoaded] = useState(false);
+  const [creatingPlaylist, setCreatingPlaylist] = useState(false);
 
   async function onShare() {
     if (!profile) return;
@@ -54,6 +62,32 @@ function ProfileScreen() {
       setStats((s) => ({ ...s, poems: list.length }));
     })();
   }, [profile]);
+
+  // Lazy-load playlists when the tab is first opened.
+  useEffect(() => {
+    if (!profile || tab !== "playlists" || playlistsLoaded) return;
+    fetchUserPlaylists(profile.id)
+      .then(setPlaylists)
+      .catch(() => setPlaylists([]))
+      .finally(() => setPlaylistsLoaded(true));
+  }, [profile, tab, playlistsLoaded]);
+
+  async function onCreatePlaylist() {
+    if (!profile || creatingPlaylist) return;
+    setCreatingPlaylist(true);
+    try {
+      const created = await createPlaylist(
+        profile.id,
+        `My Playlist #${playlists.length + 1}`,
+      );
+      setPlaylists((prev) => [...prev, { ...created, poem_count: 0 }]);
+      router.push(`/playlist/${created.id}?edit=1` as never);
+    } catch {
+      // surface silently; user can retry
+    } finally {
+      setCreatingPlaylist(false);
+    }
+  }
 
   if (!profile) return null;
 
@@ -159,8 +193,69 @@ function ProfileScreen() {
         )}
 
         {tab === "playlists" && (
-          <View style={{ padding: 20 }}>
-            <Text style={styles.empty}>Playlists coming soon.</Text>
+          <View style={{ padding: 20, gap: 12 }}>
+            <Pressable
+              onPress={onCreatePlaylist}
+              disabled={creatingPlaylist}
+              style={[styles.createPlaylistBtn, creatingPlaylist && { opacity: 0.6 }]}
+            >
+              <View style={styles.createPlaylistIcon}>
+                <Icon name="add" size={20} color={colors.white} />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.createPlaylistTitle}>
+                  {creatingPlaylist ? "Creating…" : "Create playlist"}
+                </Text>
+                <Text style={styles.createPlaylistSub}>
+                  A fresh place for poems you love
+                </Text>
+              </View>
+            </Pressable>
+
+            {!playlistsLoaded ? (
+              <Text style={styles.empty}>Loading…</Text>
+            ) : playlists.length === 0 ? (
+              <Text style={styles.empty}>
+                You haven&apos;t created any playlists yet.
+              </Text>
+            ) : (
+              playlists.map((pl) => (
+                <Pressable
+                  key={pl.id}
+                  onPress={() => router.push(`/playlist/${pl.id}` as never)}
+                  style={styles.playlistRow}
+                >
+                  {pl.cover_url ? (
+                    <Image
+                      source={{ uri: pl.cover_url }}
+                      style={styles.playlistThumb}
+                      contentFit="cover"
+                    />
+                  ) : (
+                    <View style={[styles.playlistThumb, styles.playlistThumbEmpty]}>
+                      <Icon
+                        name="library_books"
+                        size={22}
+                        color={colors.onSurfaceVariant}
+                      />
+                    </View>
+                  )}
+                  <View style={{ flex: 1, minWidth: 0 }}>
+                    <Text style={styles.playlistName} numberOfLines={1}>
+                      {pl.name}
+                    </Text>
+                    <Text style={styles.playlistMeta} numberOfLines={1}>
+                      {pl.poem_count} {pl.poem_count === 1 ? "poem" : "poems"}
+                    </Text>
+                  </View>
+                  <Icon
+                    name="arrow_forward_ios"
+                    size={14}
+                    color={colors.onSurfaceVariant}
+                  />
+                </Pressable>
+              ))
+            )}
           </View>
         )}
         {tab === "liked" && (
@@ -222,4 +317,52 @@ const styles = StyleSheet.create({
   poemTile: { padding: 16, borderRadius: radius.lg, backgroundColor: colors.surfaceHigh },
   poemTitle: { fontFamily: fonts.headline, fontSize: 16, color: colors.white },
   poemExcerpt: { fontFamily: fonts.body, fontSize: 12, color: colors.onSurfaceVariant, marginTop: 6, lineHeight: 18 },
+
+  createPlaylistBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 14,
+    padding: 16,
+    borderRadius: radius.lg,
+    backgroundColor: colors.surfaceHigh,
+    borderWidth: 1,
+    borderColor: colors.hairline,
+  },
+  createPlaylistIcon: {
+    width: 48,
+    height: 48,
+    borderRadius: 10,
+    backgroundColor: colors.surfaceBright,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  createPlaylistTitle: { fontFamily: fonts.bodyBold, fontSize: 14, color: colors.white },
+  createPlaylistSub: {
+    fontFamily: fonts.body,
+    fontSize: 11,
+    color: colors.onSurfaceVariant,
+    marginTop: 2,
+  },
+
+  playlistRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 14,
+    padding: 12,
+    borderRadius: radius.md,
+    backgroundColor: colors.surfaceLow,
+  },
+  playlistThumb: { width: 52, height: 52, borderRadius: 8 },
+  playlistThumbEmpty: {
+    backgroundColor: colors.surfaceHigh,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  playlistName: { fontFamily: fonts.bodySemiBold, fontSize: 14, color: colors.white },
+  playlistMeta: {
+    fontFamily: fonts.body,
+    fontSize: 11,
+    color: colors.onSurfaceVariant,
+    marginTop: 2,
+  },
 });
